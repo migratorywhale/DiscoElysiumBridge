@@ -13,6 +13,8 @@ import urllib.request
 from pathlib import Path
 from typing import Any
 
+from gaze_runner import run_gaze_once
+
 
 DEFAULT_URL = os.environ.get("DISCO_BRIDGE_URL", "http://127.0.0.1:7860")
 
@@ -56,6 +58,18 @@ def build_parser() -> argparse.ArgumentParser:
     screenshot.add_argument("--format", choices=["jpeg", "bmp"], default="jpeg")
     screenshot.add_argument("--out", type=Path, help="Write decoded image to this file")
 
+    gaze = sub.add_parser("gaze")
+    gaze.add_argument("--window", default=os.environ.get("DISCO_GAZE_WINDOW", "Disco Elysium"))
+    gaze.add_argument("--caption-provider", choices=["glm", "none"], default=os.environ.get("DISCO_GAZE_PROVIDER", "glm"))
+    gaze.add_argument("--no-ocr", action="store_true")
+    gaze.add_argument("--mask-preset", default=os.environ.get("DISCO_GAZE_MASK", "mac-safe"))
+    gaze.add_argument("--timeout", type=int, default=45)
+    gaze.add_argument(
+        "--allow-fullscreen-fallback",
+        action="store_true",
+        help="Allow gaze_local.py to capture fullscreen if the named window is missing.",
+    )
+
     return parser
 
 
@@ -92,6 +106,17 @@ def main() -> int:
                 data = {k: v for k, v in data.items() if k != "data"}
                 data["written"] = str(args.out)
             print_json(data if args.out else {k: v for k, v in data.items() if k != "data"})
+        elif args.command == "gaze":
+            print_json(
+                run_gaze_once(
+                    window=args.window,
+                    caption_provider=args.caption_provider,
+                    ocr=not args.no_ocr,
+                    mask_preset=args.mask_preset,
+                    timeout=args.timeout,
+                    strict_window=not args.allow_fullscreen_fallback,
+                )
+            )
     except Exception as exc:
         print(f"disco_client error: {exc}", file=sys.stderr)
         return 1

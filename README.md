@@ -109,6 +109,8 @@ API directly or through the wrapper tools in this repo.
 python tools/disco_client.py health
 python tools/disco_client.py state
 python tools/disco_client.py screenshot --scale 0.5 --format jpeg --out /tmp/disco.jpg
+python tools/disco_client.py gaze --window "Disco Elysium" --caption-provider glm
+python tools/disco_client.py gaze --window "Disco Elysium" --caption-provider none
 python tools/disco_client.py choose 0
 python tools/disco_client.py continue
 python tools/disco_client.py key tab --hold 2000
@@ -128,6 +130,7 @@ export DISCO_BRIDGE_URL="http://windows-host.local:7860"
 - `disco_health`
 - `disco_state`
 - `disco_screenshot`
+- `disco_gaze`
 - `disco_choose`
 - `disco_continue`
 - `disco_click`
@@ -155,6 +158,23 @@ Example Claude/Codex-style command:
   }
 }
 ```
+
+### Low-token gaze
+
+`disco_gaze` uses the local `gaze-xiaoke-tool` repo to observe the Disco Elysium
+window and return compact OCR/vision caption entries instead of a full image.
+This is usually cheaper for model context than calling `disco_screenshot`.
+By default it refuses to return fullscreen fallback output when the named game
+window is missing.
+
+Defaults:
+
+- `GAZE_TOOL_DIR=~/Projects/gaze-xiaoke-tool`
+- `DISCO_GAZE_WINDOW="Disco Elysium"`
+- `DISCO_GAZE_PROVIDER=glm`
+- `DISCO_GAZE_MASK=mac-safe`
+
+Use `disco_screenshot` only when the model needs actual pixels.
 
 ## Platform Support
 

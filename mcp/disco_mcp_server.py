@@ -6,14 +6,20 @@ from __future__ import annotations
 import base64
 import json
 import os
+import sys
 import urllib.parse
 import urllib.request
+from pathlib import Path
 from typing import Any
 
 from mcp.server.fastmcp import FastMCP, Image
 
 
 BRIDGE_URL = os.environ.get("DISCO_BRIDGE_URL", "http://127.0.0.1:7860")
+ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT / "tools"))
+
+from gaze_runner import run_gaze_once  # noqa: E402
 
 mcp = FastMCP("disco-elysium-bridge")
 
@@ -85,6 +91,24 @@ def disco_screenshot(scale: float = 0.5) -> list:
         Image(data=image_bytes, format="jpeg"),
         compact(meta),
     ]
+
+
+@mcp.tool()
+def disco_gaze(
+    window: str = "Disco Elysium",
+    caption_provider: str = "glm",
+    ocr: bool = True,
+    mask_preset: str = "mac-safe",
+) -> str:
+    """Observe the Disco Elysium window through the local gaze tool and return compact text."""
+    return compact(
+        run_gaze_once(
+            window=window,
+            caption_provider=caption_provider,
+            ocr=ocr,
+            mask_preset=mask_preset,
+        )
+    )
 
 
 if __name__ == "__main__":

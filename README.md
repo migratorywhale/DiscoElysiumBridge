@@ -61,12 +61,24 @@ The script builds the plugin with that `GameDir`, then copies
 ### macOS prototype install helper
 
 The macOS path is experimental. BepInEx has a `Unity.IL2CPP-macos-x64` build;
-install it into the folder that contains `Disco Elysium.app`, run BepInEx once
-so `BepInEx/interop` is generated, then run:
+install it into the folder that contains the app bundle, prepare Disco Elysium's
+macOS-specific paths, then run BepInEx once so `BepInEx/interop` is generated:
+
+```bash
+scripts/prepare-macos-bepinex.sh "$HOME/Library/Application Support/Steam/steamapps/common/Disco Elysium"
+cd "$HOME/Library/Application Support/Steam/steamapps/common/Disco Elysium"
+./run_bepinex.sh
+```
+
+Then build and install the bridge plugin:
 
 ```bash
 scripts/install-macos.sh "$HOME/Library/Application Support/Steam/steamapps/common/Disco Elysium"
 ```
+
+The prepare script creates reversible symlinks for Unity/BepInEx path detection
+and disables BepInEx's `ScanMethodRefs` pass, which can fail during Mach-O
+interop generation.
 
 Current macOS target: get the plugin to load and verify `/health` and `/state`.
 The control endpoints (`/choose`, `/continue`, `/click`, `/key`, `/screenshot`)

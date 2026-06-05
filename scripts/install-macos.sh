@@ -36,7 +36,8 @@ fi
 
 if [[ ! -f "$BEPINEX_DIR/interop/Assembly-CSharp.dll" ]]; then
   echo "Missing generated interop DLLs under $BEPINEX_DIR/interop." >&2
-  echo "Launch the game through BepInEx once first; first IL2CPP launch can take a while." >&2
+  echo "Run scripts/prepare-macos-bepinex.sh first, then launch the game through BepInEx once." >&2
+  echo "First IL2CPP launch can take a while." >&2
   exit 1
 fi
 

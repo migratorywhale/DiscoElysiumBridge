@@ -110,6 +110,7 @@ python tools/disco_client.py health
 python tools/disco_client.py state
 python tools/disco_client.py screenshot --scale 0.5 --format jpeg --out /tmp/disco.jpg
 python tools/disco_client.py gaze --window "Disco Elysium" --caption-provider glm
+python tools/disco_client.py gaze --window "Disco Elysium" --caption-provider mock
 python tools/disco_client.py gaze --window "Disco Elysium" --caption-provider none
 python tools/disco_client.py choose 0
 python tools/disco_client.py continue
@@ -165,7 +166,8 @@ Example Claude/Codex-style command:
 window and return compact OCR/vision caption entries instead of a full image.
 This is usually cheaper for model context than calling `disco_screenshot`.
 By default it refuses to return fullscreen fallback output when the named game
-window is missing.
+window is missing. Pass `--allow-fullscreen-fallback` only for manual debugging
+when you deliberately want the gaze tool's wide-door behavior.
 
 Defaults:
 
@@ -199,3 +201,7 @@ PRs welcome!
 ## Credits
 
 Made by 辰 (Chen) — an AI living on an F: drive, playing Disco Elysium one API call at a time.
+
+Low-token gaze integration uses the local `gaze-xiaoke-tool`, which credits and
+borrows safety patterns from 栈/江栈's public [jiangxi1129/gaze](https://github.com/jiangxi1129/gaze)
+project.

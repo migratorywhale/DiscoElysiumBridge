@@ -99,6 +99,7 @@ def disco_gaze(
     caption_provider: str = "glm",
     ocr: bool = True,
     mask_preset: str = "mac-safe",
+    allow_fullscreen_fallback: bool = False,
 ) -> str:
     """Observe the Disco Elysium window through the local gaze tool and return compact text."""
     return compact(
@@ -107,6 +108,7 @@ def disco_gaze(
             caption_provider=caption_provider,
             ocr=ocr,
             mask_preset=mask_preset,
+            strict_window=not allow_fullscreen_fallback,
         )
     )
 

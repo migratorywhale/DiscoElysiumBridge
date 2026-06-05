@@ -74,6 +74,8 @@ def run_gaze_once(
         cmd.append("--no-ocr")
     if strict_window:
         cmd.append("--strict-window")
+    else:
+        cmd.append("--allow-fullscreen-fallback")
 
     env = os.environ.copy()
     env.setdefault("PYTHONUNBUFFERED", "1")

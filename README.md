@@ -109,8 +109,8 @@ API directly or through the wrapper tools in this repo.
 python tools/disco_client.py health
 python tools/disco_client.py state
 python tools/disco_client.py screenshot --scale 0.5 --format jpeg --out /tmp/disco.jpg
-python tools/disco_client.py gaze --window "Disco Elysium" --caption-provider glm
 python tools/disco_client.py gaze --window "Disco Elysium" --caption-provider gemini
+python tools/disco_client.py gaze --window "Disco Elysium" --caption-provider glm
 python tools/disco_client.py gaze --window "Disco Elysium" --caption-provider mock
 python tools/disco_client.py gaze --window "Disco Elysium" --caption-provider none
 python tools/disco_client.py choose 0
@@ -174,7 +174,7 @@ Defaults:
 
 - `GAZE_TOOL_DIR=~/Projects/gaze-xiaoke-tool`
 - `DISCO_GAZE_WINDOW="Disco Elysium"`
-- `DISCO_GAZE_PROVIDER=glm`
+- `DISCO_GAZE_PROVIDER=gemini`
 - `DISCO_GAZE_MASK=mac-safe`
 
 Use `disco_screenshot` only when the model needs actual pixels.

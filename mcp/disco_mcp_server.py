@@ -96,7 +96,7 @@ def disco_screenshot(scale: float = 0.5) -> list:
 @mcp.tool()
 def disco_gaze(
     window: str = "Disco Elysium",
-    caption_provider: str = "glm",
+    caption_provider: str = "gemini",
     ocr: bool = True,
     mask_preset: str = "mac-safe",
     allow_fullscreen_fallback: bool = False,

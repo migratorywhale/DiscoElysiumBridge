@@ -26,7 +26,7 @@ def gaze_python(gaze_dir: Path) -> str:
 def run_gaze_once(
     *,
     window: str = "Disco Elysium",
-    caption_provider: str = "glm",
+    caption_provider: str = "gemini",
     ocr: bool = True,
     mask_preset: str = "mac-safe",
     timeout: int = 45,

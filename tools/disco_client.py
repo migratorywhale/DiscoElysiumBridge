@@ -60,7 +60,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     gaze = sub.add_parser("gaze")
     gaze.add_argument("--window", default=os.environ.get("DISCO_GAZE_WINDOW", "Disco Elysium"))
-    gaze.add_argument("--caption-provider", choices=["glm", "mock", "none"], default=os.environ.get("DISCO_GAZE_PROVIDER", "glm"))
+    gaze.add_argument("--caption-provider", choices=["glm", "gemini", "mock", "none"], default=os.environ.get("DISCO_GAZE_PROVIDER", "glm"))
     gaze.add_argument("--no-ocr", action="store_true")
     gaze.add_argument("--mask-preset", default=os.environ.get("DISCO_GAZE_MASK", "mac-safe"))
     gaze.add_argument("--timeout", type=int, default=45)

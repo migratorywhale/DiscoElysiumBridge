@@ -110,6 +110,7 @@ python tools/disco_client.py health
 python tools/disco_client.py state
 python tools/disco_client.py screenshot --scale 0.5 --format jpeg --out /tmp/disco.jpg
 python tools/disco_client.py gaze --window "Disco Elysium" --caption-provider glm
+python tools/disco_client.py gaze --window "Disco Elysium" --caption-provider gemini
 python tools/disco_client.py gaze --window "Disco Elysium" --caption-provider mock
 python tools/disco_client.py gaze --window "Disco Elysium" --caption-provider none
 python tools/disco_client.py choose 0

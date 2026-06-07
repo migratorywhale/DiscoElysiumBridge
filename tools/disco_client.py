@@ -48,6 +48,14 @@ def build_parser() -> argparse.ArgumentParser:
     click.add_argument("x", type=int)
     click.add_argument("y", type=int)
     click.add_argument("--double", action="store_true", help="Double-click/run")
+    click.add_argument(
+        "--target",
+        choices=["screen", "game", "window", "screen-image", "fullscreen-image", "desktop-image"],
+        default="screen",
+        help="Coordinate space. screen=absolute macOS points; game=scaled game screenshot pixels.",
+    )
+    click.add_argument("--scale", type=float, default=1.0, help="Screenshot scale when target is game or *-image.")
+    click.add_argument("--dry-run", action="store_true", help="Return mapped coordinates without clicking.")
 
     key = sub.add_parser("key")
     key.add_argument("name", help="Key name: tab, enter, escape, f1, up, i, m, ...")
@@ -93,7 +101,14 @@ def main() -> int:
                 request_json(
                     args.url,
                     "/click",
-                    {"x": args.x, "y": args.y, "double": 1 if args.double else 0},
+                    {
+                        "x": args.x,
+                        "y": args.y,
+                        "double": 1 if args.double else 0,
+                        "target": args.target,
+                        "scale": args.scale,
+                        "dry_run": 1 if args.dry_run else 0,
+                    },
                 )
             )
         elif args.command == "key":

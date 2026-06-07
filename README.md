@@ -13,6 +13,7 @@ The mod runs an HTTP server on `localhost:7860` with these endpoints:
 | Endpoint | Description | Example |
 |----------|-------------|---------|
 | `/click?x=500&y=300` | Click at screen position | Walk to a location |
+| `/click?x=120&y=80&target=game&scale=0.25` | Click a point from the scaled game screenshot | Align hand to eye |
 | `/click?x=500&y=300&double=1` | Double-click | Run to a location |
 | `/choose?index=2` | Select dialogue option (0-9) | Pick a dialogue choice |
 | `/continue` | Press Enter | Advance dialogue |
@@ -185,6 +186,8 @@ python tools/disco_client.py choose 0
 python tools/disco_client.py continue
 python tools/disco_client.py key tab --hold 2000
 python tools/disco_client.py click 500 300 --double
+python tools/disco_client.py click 120 80 --target game --scale 0.25
+python tools/disco_client.py click 120 80 --target game --scale 0.25 --dry-run
 ```
 
 Set `DISCO_BRIDGE_URL` if the bridge is exposed from another machine:
@@ -246,6 +249,11 @@ Defaults:
 - `DISCO_GAZE_MASK=mac-safe`
 
 Use `disco_screenshot` only when the model needs actual pixels.
+
+When using the MCP wrapper, `disco_click` defaults to `target=game` and
+`scale=0.25`, matching the default `disco_screenshot`. In other words, click
+coordinates are pixels in the returned game screenshot unless you explicitly set
+`target=screen` for raw macOS screen coordinates.
 
 ## Platform Support
 

@@ -26,7 +26,7 @@ except Exception:  # pragma: no cover - depends on local venv.
     Image = None  # type: ignore
 
 
-VERSION = "0.2.0"
+VERSION = "0.3.0"
 APP_BUNDLE_ID = os.environ.get("DISCO_APP_BUNDLE_ID", "com.zaumstudio.discoelysium")
 
 try:
@@ -175,6 +175,7 @@ def capture_screenshot(params: dict[str, list[str]]) -> dict[str, Any]:
     max_bytes = clamp_int(one(params, "max_bytes", "750000"), 20_000, 5_000_000)
     target = one(params, "target", "game").lower()
     activate_game()
+    game_window = find_game_window() if target not in {"screen", "fullscreen", "desktop"} else None
 
     with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as tmp:
         path = Path(tmp.name)
@@ -193,7 +194,7 @@ def capture_screenshot(params: dict[str, list[str]]) -> dict[str, Any]:
 
         image = Image.open(path).convert("RGB")
         source_width, source_height = image.size
-        bbox = find_game_window_bbox() if target not in {"screen", "fullscreen", "desktop"} else None
+        bbox = game_window["pixelBox"] if game_window else None
         cropped = False
         if bbox:
             left, top, right, bottom = clip_box(bbox, source_width, source_height)
@@ -220,6 +221,7 @@ def capture_screenshot(params: dict[str, list[str]]) -> dict[str, Any]:
             "quality": used_quality,
             "target": "game" if cropped else "screen",
             "cropped": cropped,
+            "gameWindow": game_window if cropped else None,
             "sourceWidth": source_width,
             "sourceHeight": source_height,
             "data": base64.b64encode(data).decode("ascii"),
@@ -229,34 +231,97 @@ def capture_screenshot(params: dict[str, list[str]]) -> dict[str, Any]:
         path.unlink(missing_ok=True)
 
 
-def find_game_window_bbox() -> tuple[int, int, int, int] | None:
+def find_game_window() -> dict[str, Any] | None:
     if Quartz is None:
         return None
 
-    scale = mac_screen_scale()
+    display_scale = mac_screen_scale()
     options = Quartz.kCGWindowListOptionOnScreenOnly | Quartz.kCGWindowListExcludeDesktopElements
     windows = Quartz.CGWindowListCopyWindowInfo(options, Quartz.kCGNullWindowID)
-    candidates: list[tuple[int, tuple[int, int, int, int]]] = []
+    candidates: list[tuple[int, dict[str, Any]]] = []
     for win in windows or []:
         owner = str(win.get("kCGWindowOwnerName", "") or "")
         title = str(win.get("kCGWindowName", "") or "")
+        layer = int(win.get("kCGWindowLayer", 0) or 0)
+        alpha = float(win.get("kCGWindowAlpha", 1.0) or 0.0)
         haystack = f"{owner} {title}".lower()
         if "disco elysium" not in haystack:
             continue
-        bounds = win.get("kCGWindowBounds") or {}
-        width = int(float(bounds.get("Width", 0) or 0))
-        height = int(float(bounds.get("Height", 0) or 0))
-        if width <= 0 or height <= 0:
+        if layer != 0 or alpha <= 0:
             continue
-        x = int(float(bounds.get("X", 0) or 0) * scale)
-        y = int(float(bounds.get("Y", 0) or 0) * scale)
-        w = int(width * scale)
-        h = int(height * scale)
-        candidates.append((w * h, (x, y, x + w, y + h)))
+        bounds = win.get("kCGWindowBounds") or {}
+        point_x = float(bounds.get("X", 0) or 0)
+        point_y = float(bounds.get("Y", 0) or 0)
+        point_width = float(bounds.get("Width", 0) or 0)
+        point_height = float(bounds.get("Height", 0) or 0)
+        if point_width < 300 or point_height < 300:
+            continue
+        point_area = point_width * point_height
+        if point_area < 250_000:
+            continue
+
+        pixel_x = int(point_x * display_scale)
+        pixel_y = int(point_y * display_scale)
+        pixel_width = int(point_width * display_scale)
+        pixel_height = int(point_height * display_scale)
+        info = {
+            "owner": owner,
+            "title": title,
+            "windowNumber": int(win.get("kCGWindowNumber", 0) or 0),
+            "displayScale": display_scale,
+            "pointBox": {
+                "x": point_x,
+                "y": point_y,
+                "width": point_width,
+                "height": point_height,
+            },
+            "pixelBox": (pixel_x, pixel_y, pixel_x + pixel_width, pixel_y + pixel_height),
+            "pixelBoxObject": {
+                "x": pixel_x,
+                "y": pixel_y,
+                "width": pixel_width,
+                "height": pixel_height,
+            },
+        }
+        candidates.append((pixel_width * pixel_height, info))
 
     if not candidates:
         return None
     return max(candidates, key=lambda item: item[0])[1]
+
+
+def map_click_coordinates(x: int, y: int, params: dict[str, list[str]]) -> tuple[int, int, dict[str, Any]]:
+    target = one(params, "target", "screen").lower()
+    scale = clamp_float(one(params, "scale", "1.0"), 0.05, 1.0)
+    if target in {"game", "window"}:
+        game_window = find_game_window()
+        if not game_window:
+            raise RuntimeError("Disco Elysium window not found; launch the game or use target=screen absolute coordinates.")
+        point_box = game_window["pointBox"]
+        display_scale = float(game_window["displayScale"])
+        mapped_x = int(round(float(point_box["x"]) + (x / (display_scale * scale))))
+        mapped_y = int(round(float(point_box["y"]) + (y / (display_scale * scale))))
+        return mapped_x, mapped_y, {
+            "coordinateSpace": "game",
+            "inputX": x,
+            "inputY": y,
+            "inputScale": scale,
+            "gameWindow": game_window,
+        }
+
+    if target in {"screen-image", "fullscreen-image", "desktop-image"}:
+        display_scale = mac_screen_scale()
+        mapped_x = int(round(x / (display_scale * scale)))
+        mapped_y = int(round(y / (display_scale * scale)))
+        return mapped_x, mapped_y, {
+            "coordinateSpace": target,
+            "inputX": x,
+            "inputY": y,
+            "inputScale": scale,
+            "displayScale": display_scale,
+        }
+
+    return x, y, {"coordinateSpace": "screen", "inputX": x, "inputY": y}
 
 
 def mac_screen_scale() -> float:
@@ -362,7 +427,19 @@ class Handler(BaseHTTPRequestHandler):
             x = int(one(params, "x"))
             y = int(one(params, "y"))
             double = one(params, "double", "0").lower() in {"1", "true", "yes"}
-            return post_click(x, y, double)
+            mapped_x, mapped_y, mapping = map_click_coordinates(x, y, params)
+            if one(params, "dry_run", "0").lower() in {"1", "true", "yes"}:
+                return {
+                    "clicked": False,
+                    "dryRun": True,
+                    "x": mapped_x,
+                    "y": mapped_y,
+                    "double": double,
+                    "mapping": mapping,
+                }
+            result = post_click(mapped_x, mapped_y, double)
+            result["mapping"] = mapping
+            return result
         if path == "/key":
             name = one(params, "name")
             hold = int(one(params, "hold", "0"))

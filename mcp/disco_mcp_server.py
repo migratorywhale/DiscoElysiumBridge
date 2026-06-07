@@ -62,9 +62,28 @@ def disco_continue() -> str:
 
 
 @mcp.tool()
-def disco_click(x: int, y: int, double: bool = False) -> str:
-    """Click a screen coordinate. Set double=true to run."""
-    return compact(request_json("/click", {"x": x, "y": y, "double": 1 if double else 0}))
+def disco_click(
+    x: int,
+    y: int,
+    double: bool = False,
+    target: str = "game",
+    scale: float = 0.25,
+    dry_run: bool = False,
+) -> str:
+    """Click a coordinate. By default x/y are pixels in the default game screenshot (target=game, scale=0.25)."""
+    return compact(
+        request_json(
+            "/click",
+            {
+                "x": x,
+                "y": y,
+                "double": 1 if double else 0,
+                "target": target,
+                "scale": scale,
+                "dry_run": 1 if dry_run else 0,
+            },
+        )
+    )
 
 
 @mcp.tool()

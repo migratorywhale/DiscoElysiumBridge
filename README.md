@@ -217,7 +217,7 @@ Example Claude/Codex-style command:
       "command": "uv",
       "args": ["run", "--with", "mcp", "python", "/path/to/DiscoElysiumBridge/mcp/disco_mcp_server.py"],
       "env": {
-        "DISCO_BRIDGE_URL": "http://127.0.0.1:7860"
+        "DISCO_BRIDGE_URL": "http://localhost:7860"
       }
     }
   }

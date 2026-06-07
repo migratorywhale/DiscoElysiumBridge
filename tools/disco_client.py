@@ -16,7 +16,7 @@ from typing import Any
 from gaze_runner import run_gaze_once
 
 
-DEFAULT_URL = os.environ.get("DISCO_BRIDGE_URL", "http://127.0.0.1:7860")
+DEFAULT_URL = os.environ.get("DISCO_BRIDGE_URL", "http://localhost:7860")
 
 
 def request_json(base_url: str, path: str, params: dict[str, Any] | None = None) -> dict[str, Any]:

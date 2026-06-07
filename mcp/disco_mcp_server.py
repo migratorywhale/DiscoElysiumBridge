@@ -15,7 +15,7 @@ from typing import Any
 from mcp.server.fastmcp import FastMCP, Image
 
 
-BRIDGE_URL = os.environ.get("DISCO_BRIDGE_URL", "http://127.0.0.1:7860")
+BRIDGE_URL = os.environ.get("DISCO_BRIDGE_URL", "http://localhost:7860")
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "tools"))
 

@@ -74,6 +74,7 @@ def build_parser() -> argparse.ArgumentParser:
     gaze.add_argument("--caption-provider", choices=["glm", "gemini", "mock", "none"], default=os.environ.get("DISCO_GAZE_PROVIDER", "gemini"))
     gaze.add_argument("--no-ocr", action="store_true")
     gaze.add_argument("--mask-preset", default=os.environ.get("DISCO_GAZE_MASK", "mac-safe"))
+    gaze.add_argument("--max-ocr-chars", type=int, default=int(os.environ.get("DISCO_GAZE_MAX_OCR_CHARS", "1200")))
     gaze.add_argument("--timeout", type=int, default=45)
     gaze.add_argument(
         "--allow-fullscreen-fallback",
@@ -141,6 +142,7 @@ def main() -> int:
                     caption_provider=args.caption_provider,
                     ocr=not args.no_ocr,
                     mask_preset=args.mask_preset,
+                    max_ocr_chars=args.max_ocr_chars,
                     timeout=args.timeout,
                     strict_window=not args.allow_fullscreen_fallback,
                 )

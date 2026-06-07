@@ -30,6 +30,7 @@ def run_gaze_once(
     caption_provider: str = "gemini",
     ocr: bool = True,
     mask_preset: str = "mac-safe",
+    max_ocr_chars: int = 1200,
     timeout: int = 45,
     strict_window: bool = True,
 ) -> dict[str, Any]:
@@ -64,6 +65,7 @@ def run_gaze_once(
         caption_provider=caption_provider,
         ocr=ocr,
         mask_preset=mask_preset,
+        max_ocr_chars=max_ocr_chars,
         strict_window=strict_window,
     )
 
@@ -85,6 +87,7 @@ def run_gaze_once(
             caption_provider=caption_provider,
             ocr=ocr,
             mask_preset=mask_preset,
+            max_ocr_chars=max_ocr_chars,
             strict_window=False,
         )
         try:
@@ -131,6 +134,7 @@ def build_gaze_command(
     caption_provider: str,
     ocr: bool,
     mask_preset: str,
+    max_ocr_chars: int,
     strict_window: bool,
 ) -> list[str]:
     cmd = [
@@ -144,6 +148,8 @@ def build_gaze_command(
         "0",
         "--max-batch",
         "1",
+        "--max-ocr-chars",
+        str(max(1, int(max_ocr_chars))),
         "--mask-preset",
         mask_preset,
         "--auto-mask",

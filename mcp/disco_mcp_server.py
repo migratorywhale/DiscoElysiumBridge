@@ -142,15 +142,17 @@ def disco_gaze(
     caption_provider: str = "gemini",
     ocr: bool = True,
     mask_preset: str = "mac-safe",
+    max_ocr_chars: int = 1200,
     allow_fullscreen_fallback: bool = False,
 ) -> str:
-    """Observe the Disco Elysium window through the local gaze tool and return compact text."""
+    """Observe the Disco Elysium window through the local gaze tool and return compact text. Increase max_ocr_chars for dense dialogue screens."""
     return compact(
         run_gaze_once(
             window=window,
             caption_provider=caption_provider,
             ocr=ocr,
             mask_preset=mask_preset,
+            max_ocr_chars=max_ocr_chars,
             strict_window=not allow_fullscreen_fallback,
         )
     )

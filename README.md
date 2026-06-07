@@ -179,6 +179,7 @@ python tools/disco_client.py health
 python tools/disco_client.py state
 python tools/disco_client.py screenshot --scale 0.25 --quality 35 --target game --out /tmp/disco.jpg
 python tools/disco_client.py gaze --window "Disco Elysium" --caption-provider gemini
+python tools/disco_client.py gaze --window "Disco Elysium" --caption-provider gemini --max-ocr-chars 2000
 python tools/disco_client.py gaze --window "Disco Elysium" --caption-provider glm
 python tools/disco_client.py gaze --window "Disco Elysium" --caption-provider mock
 python tools/disco_client.py gaze --window "Disco Elysium" --caption-provider none
@@ -247,8 +248,11 @@ Defaults:
 - `DISCO_GAZE_WINDOW="Disco Elysium"`
 - `DISCO_GAZE_PROVIDER=gemini`
 - `DISCO_GAZE_MASK=mac-safe`
+- `DISCO_GAZE_MAX_OCR_CHARS=1200`
 
 Use `disco_screenshot` only when the model needs actual pixels.
+For text-heavy dialogue screens, call `disco_gaze(max_ocr_chars=2000)` or higher
+instead of taking a larger screenshot.
 
 When using the MCP wrapper, `disco_click` defaults to `target=game` and
 `scale=0.25`, matching the default `disco_screenshot`. In other words, click

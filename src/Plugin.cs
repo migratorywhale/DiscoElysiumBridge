@@ -25,15 +25,22 @@ public class Plugin : BasePlugin
         Log = base.Log;
         Log.LogInfo("DiscoElysiumBridge loading...");
 
-        try
+        if (RuntimeInformation.IsOSPlatform(OSPlatform.OSX))
         {
-            var harmony = new Harmony("chen.DiscoElysiumBridge");
-            harmony.PatchAll(typeof(DialogueHooks));
-            Log.LogInfo("Harmony patches applied");
+            Log.LogInfo("Skipping Harmony dialogue patches on macOS; state endpoint will read DialogueManager directly");
         }
-        catch (Exception e)
+        else
         {
-            Log.LogError($"Failed to apply Harmony patches: {e}");
+            try
+            {
+                var harmony = new Harmony("chen.DiscoElysiumBridge");
+                harmony.PatchAll(typeof(DialogueHooks));
+                Log.LogInfo("Harmony patches applied");
+            }
+            catch (Exception e)
+            {
+                Log.LogError($"Failed to apply Harmony patches: {e}");
+            }
         }
 
         StartHttpServer();

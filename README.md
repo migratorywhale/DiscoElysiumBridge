@@ -76,21 +76,39 @@ Then build and install the bridge plugin:
 scripts/install-macos.sh "$HOME/Library/Application Support/Steam/steamapps/common/Disco Elysium"
 ```
 
+On this Mac, BepInEx's stock IL2CPP runtime-invoke scene-change gate can patch
+`il2cpp_runtime_invoke` successfully, but never reaches plugin execution during
+the Disco Elysium menu startup. Apply the local runtime patch after BepInEx is
+installed:
+
+```bash
+scripts/patch-macos-bepinex-runtime.sh "$HOME/Library/Application Support/Steam/steamapps/common/Disco Elysium"
+```
+
+The patch backs up `BepInEx/core/BepInEx.Unity.IL2CPP.dll`, then changes
+BepInEx to execute the IL2CPP chainloader immediately after the runtime-invoke
+detour is installed. A successful launch logs:
+
+```text
+DiscoElysiumBridge loading...
+Skipping Harmony dialogue patches on macOS; state endpoint will read DialogueManager directly
+HTTP server started on http://localhost:7860/
+DiscoElysiumBridge loaded!
+```
+
 The prepare script creates reversible symlinks for Unity/BepInEx path detection
 and disables BepInEx's `ScanMethodRefs` pass, which can fail during Mach-O
 interop generation.
 
-Current macOS target: get the plugin to load and verify `/health` and `/state`.
-The control endpoints (`/choose`, `/continue`, `/click`, `/key`, `/screenshot`)
-still use Windows APIs and need macOS-native replacements before they can be
-used on Mac.
+Current macOS target: the internal plugin loads and `/health` plus `/state` work
+when called as `http://localhost:7860/...`. `http://127.0.0.1:7860/...` may not
+match the `HttpListener` prefix. The control endpoints (`/choose`, `/continue`,
+`/click`, `/key`, `/screenshot`) still use Windows APIs and need macOS-native
+replacements before they can be used inside the BepInEx plugin on Mac.
 
-Current diagnostic note: the macOS BepInEx path can now generate interop
-assemblies, and the extra `GameAssembly.dylib` symlinks let the chainloader get
-past the old "Could not locate Il2Cpp game assembly" fatal. On this Mac, the
-plugin still does not execute because BepInEx's runtime-invoke scene-change hook
-does not reach plugin loading. Use the external bridge fallback below while the
-internal BepInEx hook is being investigated.
+Harmony dialogue patches are skipped on macOS because applying them through
+Dobby under Rosetta currently crashes during native detour preparation. The
+state endpoint reads `DialogueManager` directly instead.
 
 ### macOS external bridge fallback
 

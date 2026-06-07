@@ -20,8 +20,13 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any
 
+try:
+    from PIL import Image
+except Exception:  # pragma: no cover - depends on local venv.
+    Image = None  # type: ignore
 
-VERSION = "0.1.0"
+
+VERSION = "0.2.0"
 APP_BUNDLE_ID = os.environ.get("DISCO_APP_BUNDLE_ID", "com.zaumstudio.discoelysium")
 
 try:
@@ -98,13 +103,26 @@ KEY_CODES: dict[str, int] = {
 
 
 def activate_game() -> None:
-    subprocess.run(
-        ["osascript", "-e", f'tell application id "{APP_BUNDLE_ID}" to activate'],
+    frontmost_script = (
+        'tell application "System Events" to set frontmost of first application process '
+        f'whose bundle identifier is "{APP_BUNDLE_ID}" to true'
+    )
+    result = subprocess.run(
+        ["osascript", "-e", frontmost_script],
         stdout=subprocess.DEVNULL,
         stderr=subprocess.DEVNULL,
+        timeout=2,
         check=False,
     )
-    time.sleep(0.05)
+    if result.returncode != 0:
+        subprocess.run(
+            ["osascript", "-e", f'tell application id "{APP_BUNDLE_ID}" to activate'],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            timeout=2,
+            check=False,
+        )
+    time.sleep(0.12)
 
 
 def require_quartz() -> Any:
@@ -151,21 +169,142 @@ def post_click(x: int, y: int, double: bool = False) -> dict[str, Any]:
     return {"clicked": True, "x": x, "y": y, "double": double}
 
 
-def capture_screenshot() -> dict[str, Any]:
-    with tempfile.NamedTemporaryFile(suffix=".jpg", delete=False) as tmp:
+def capture_screenshot(params: dict[str, list[str]]) -> dict[str, Any]:
+    scale = clamp_float(one(params, "scale", "0.25"), 0.05, 1.0)
+    quality = clamp_int(one(params, "quality", "35"), 10, 95)
+    max_bytes = clamp_int(one(params, "max_bytes", "750000"), 20_000, 5_000_000)
+    target = one(params, "target", "game").lower()
+    activate_game()
+
+    with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as tmp:
         path = Path(tmp.name)
     try:
-        subprocess.run(["screencapture", "-x", "-t", "jpg", str(path)], check=True)
-        data = path.read_bytes()
+        subprocess.run(["screencapture", "-x", "-t", "png", str(path)], check=True, timeout=10)
+        if Image is None:
+            data = path.read_bytes()
+            return {
+                "screenshot": True,
+                "format": "png",
+                "size": len(data),
+                "data": base64.b64encode(data).decode("ascii"),
+                "source": "macos-screencapture",
+                "warning": "Pillow is not available; scale/quality/crop were skipped.",
+            }
+
+        image = Image.open(path).convert("RGB")
+        source_width, source_height = image.size
+        bbox = find_game_window_bbox() if target not in {"screen", "fullscreen", "desktop"} else None
+        cropped = False
+        if bbox:
+            left, top, right, bottom = clip_box(bbox, source_width, source_height)
+            if right > left and bottom > top:
+                image = image.crop((left, top, right, bottom))
+                cropped = True
+
+        if scale < 0.999:
+            width, height = image.size
+            image = image.resize(
+                (max(1, int(width * scale)), max(1, int(height * scale))),
+                Image.Resampling.LANCZOS,
+            )
+
+        data, used_quality = encode_jpeg_under_limit(image, quality, max_bytes)
+        width, height = image.size
         return {
             "screenshot": True,
             "format": "jpeg",
+            "width": width,
+            "height": height,
             "size": len(data),
+            "scale": scale,
+            "quality": used_quality,
+            "target": "game" if cropped else "screen",
+            "cropped": cropped,
+            "sourceWidth": source_width,
+            "sourceHeight": source_height,
             "data": base64.b64encode(data).decode("ascii"),
             "source": "macos-screencapture",
         }
     finally:
         path.unlink(missing_ok=True)
+
+
+def find_game_window_bbox() -> tuple[int, int, int, int] | None:
+    if Quartz is None:
+        return None
+
+    scale = mac_screen_scale()
+    options = Quartz.kCGWindowListOptionOnScreenOnly | Quartz.kCGWindowListExcludeDesktopElements
+    windows = Quartz.CGWindowListCopyWindowInfo(options, Quartz.kCGNullWindowID)
+    candidates: list[tuple[int, tuple[int, int, int, int]]] = []
+    for win in windows or []:
+        owner = str(win.get("kCGWindowOwnerName", "") or "")
+        title = str(win.get("kCGWindowName", "") or "")
+        haystack = f"{owner} {title}".lower()
+        if "disco elysium" not in haystack:
+            continue
+        bounds = win.get("kCGWindowBounds") or {}
+        width = int(float(bounds.get("Width", 0) or 0))
+        height = int(float(bounds.get("Height", 0) or 0))
+        if width <= 0 or height <= 0:
+            continue
+        x = int(float(bounds.get("X", 0) or 0) * scale)
+        y = int(float(bounds.get("Y", 0) or 0) * scale)
+        w = int(width * scale)
+        h = int(height * scale)
+        candidates.append((w * h, (x, y, x + w, y + h)))
+
+    if not candidates:
+        return None
+    return max(candidates, key=lambda item: item[0])[1]
+
+
+def mac_screen_scale() -> float:
+    try:
+        from AppKit import NSScreen
+
+        screen = NSScreen.mainScreen()
+        if screen:
+            return float(screen.backingScaleFactor())
+    except Exception:
+        pass
+    return 1.0
+
+
+def clip_box(box: tuple[int, int, int, int], width: int, height: int) -> tuple[int, int, int, int]:
+    left, top, right, bottom = box
+    return (
+        max(0, min(width, left)),
+        max(0, min(height, top)),
+        max(0, min(width, right)),
+        max(0, min(height, bottom)),
+    )
+
+
+def encode_jpeg_under_limit(image: Any, quality: int, max_bytes: int) -> tuple[bytes, int]:
+    from io import BytesIO
+
+    current = image
+    current_quality = quality
+    for _ in range(8):
+        buf = BytesIO()
+        current.save(buf, format="JPEG", quality=current_quality, optimize=True)
+        data = buf.getvalue()
+        if len(data) <= max_bytes:
+            return data, current_quality
+
+        if current_quality > 25:
+            current_quality = max(25, current_quality - 12)
+            continue
+
+        width, height = current.size
+        if width <= 320 or height <= 240:
+            return data, current_quality
+        current = current.resize((max(1, int(width * 0.8)), max(1, int(height * 0.8))), Image.Resampling.LANCZOS)
+
+    buf = BytesIO()
+    current.save(buf, format="JPEG", quality=current_quality, optimize=True)
+    return buf.getvalue(), current_quality
 
 
 def choose_index(index: int) -> dict[str, Any]:
@@ -229,7 +368,7 @@ class Handler(BaseHTTPRequestHandler):
             hold = int(one(params, "hold", "0"))
             return post_key(name, hold)
         if path == "/screenshot":
-            return capture_screenshot()
+            return capture_screenshot(params)
         return {
             "error": "unknown endpoint",
             "endpoints": ["/health", "/state", "/choose", "/continue", "/click", "/key", "/screenshot"],
@@ -255,6 +394,22 @@ def one(params: dict[str, list[str]], key: str, default: str | None = None) -> s
     if default is not None:
         return default
     raise ValueError(f"need {key} param")
+
+
+def clamp_float(value: str, minimum: float, maximum: float) -> float:
+    try:
+        parsed = float(value)
+    except ValueError:
+        parsed = minimum
+    return max(minimum, min(parsed, maximum))
+
+
+def clamp_int(value: str, minimum: int, maximum: int) -> int:
+    try:
+        parsed = int(value)
+    except ValueError:
+        parsed = minimum
+    return max(minimum, min(parsed, maximum))
 
 
 def main() -> int:

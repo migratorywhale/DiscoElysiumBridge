@@ -72,12 +72,8 @@ def run_gaze_once(
     except Exception as exc:
         return {"ok": False, "error": str(exc), "window": window}
     retried_fullscreen = False
-    if (
-        strict_window
-        and result is not None
-        and result.returncode != 0
-        and "could not create image from window" in (result.stderr or "").lower()
-    ):
+    combined_output = f"{result.stderr if result else ''}\n{result.stdout if result else ''}".lower()
+    if strict_window and result is not None and result.returncode != 0 and "could not create image from window" in combined_output:
         # Unity/Metal fullscreen windows can be visible but unavailable to
         # `screencapture -l`. If we got this exact failure after activating the
         # game, fullscreen fallback is narrower than it sounds: it should be the
@@ -85,7 +81,7 @@ def run_gaze_once(
         cmd = build_gaze_command(
             gaze_dir=gaze_dir,
             gaze_local=gaze_local,
-            window=window,
+            window="",
             caption_provider=caption_provider,
             ocr=ocr,
             mask_preset=mask_preset,
@@ -142,8 +138,6 @@ def build_gaze_command(
         str(gaze_local),
         "--once",
         "--dry-run",
-        "--window",
-        window,
         "--caption-provider",
         caption_provider,
         "--batch-interval",
@@ -154,6 +148,8 @@ def build_gaze_command(
         mask_preset,
         "--auto-mask",
     ]
+    if window:
+        cmd.extend(["--window", window])
     if not ocr:
         cmd.append("--no-ocr")
     if strict_window:
@@ -186,13 +182,24 @@ def run_command(cmd: list[str], gaze_dir: Path, timeout: int) -> subprocess.Comp
 
 
 def activate_macos_app(bundle_id: str) -> None:
-    subprocess.run(
-        ["osascript", "-e", f'tell application id "{bundle_id}" to activate'],
+    frontmost_script = (
+        'tell application "System Events" to set frontmost of first application process '
+        f'whose bundle identifier is "{bundle_id}" to true'
+    )
+    result = subprocess.run(
+        ["osascript", "-e", frontmost_script],
         stdout=subprocess.DEVNULL,
         stderr=subprocess.DEVNULL,
         check=False,
     )
-    time.sleep(0.1)
+    if result.returncode != 0:
+        subprocess.run(
+            ["osascript", "-e", f'tell application id "{bundle_id}" to activate'],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            check=False,
+        )
+    time.sleep(0.15)
 
 
 def macos_window_visible(needle: str) -> bool | None:

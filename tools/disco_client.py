@@ -54,8 +54,11 @@ def build_parser() -> argparse.ArgumentParser:
     key.add_argument("--hold", type=int, default=0, help="Hold duration in ms")
 
     screenshot = sub.add_parser("screenshot")
-    screenshot.add_argument("--scale", type=float, default=0.5)
+    screenshot.add_argument("--scale", type=float, default=0.25)
     screenshot.add_argument("--format", choices=["jpeg", "bmp"], default="jpeg")
+    screenshot.add_argument("--quality", type=int, default=35)
+    screenshot.add_argument("--target", choices=["game", "screen", "fullscreen", "desktop"], default="game")
+    screenshot.add_argument("--max-bytes", type=int, default=750_000)
     screenshot.add_argument("--out", type=Path, help="Write decoded image to this file")
 
     gaze = sub.add_parser("gaze")
@@ -99,7 +102,17 @@ def main() -> int:
                 params["hold"] = args.hold
             print_json(request_json(args.url, "/key", params))
         elif args.command == "screenshot":
-            data = request_json(args.url, "/screenshot", {"scale": args.scale, "format": args.format})
+            data = request_json(
+                args.url,
+                "/screenshot",
+                {
+                    "scale": args.scale,
+                    "format": args.format,
+                    "quality": args.quality,
+                    "target": args.target,
+                    "max_bytes": args.max_bytes,
+                },
+            )
             image_b64 = data.get("data")
             if args.out and image_b64:
                 args.out.write_bytes(base64.b64decode(image_b64))

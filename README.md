@@ -18,14 +18,17 @@ The mod runs an HTTP server on `localhost:7860` with these endpoints:
 | `/continue` | Press Enter | Advance dialogue |
 | `/key?name=tab&hold=2000` | Press/hold a key | Hold Tab to see highlights |
 | `/screenshot` | Capture screen as base64 | See the game |
-| `/screenshot?scale=0.5&format=jpeg` | Scaled JPEG screenshot | Smaller, saves tokens |
+| `/screenshot?scale=0.25&format=jpeg&quality=35&target=game` | Cropped/compressed JPEG screenshot | Smaller, saves tokens |
 | `/state` | Get dialogue state | Check available choices |
 | `/health` | Health check | Verify mod is running |
 
 ### Screenshot Options
 
-- `scale` (0.1-1.0): Downscale factor. Default 1.0 (full resolution)
+- `scale` (0.05-1.0): Downscale factor. MCP defaults to 0.25.
 - `format` (bmp/jpeg): Image format. Default bmp. JPEG is much smaller (~60KB vs ~4MB)
+- `quality` (10-95): macOS JPEG quality for the external bridge. MCP defaults to 35.
+- `target` (`game`/`screen`): macOS external bridge tries to crop to the Disco Elysium window when `game`.
+- `max_bytes`: macOS external bridge keeps compressing/downscaling until the JPEG is under this size when possible. MCP defaults to 750000.
 
 ### Available Keys
 
@@ -136,7 +139,7 @@ External bridge status:
 - `/health`: real external bridge health.
 - `/state`: placeholder state; use `disco_gaze` for screen text.
 - `/choose`, `/continue`, `/click`, `/key`: macOS CoreGraphics events.
-- `/screenshot`: macOS `screencapture`.
+- `/screenshot`: macOS `screencapture`, with optional game-window crop, downscale, JPEG quality, and byte cap.
 
 ## Building
 
@@ -173,7 +176,7 @@ API directly or through the wrapper tools in this repo.
 ```bash
 python tools/disco_client.py health
 python tools/disco_client.py state
-python tools/disco_client.py screenshot --scale 0.5 --format jpeg --out /tmp/disco.jpg
+python tools/disco_client.py screenshot --scale 0.25 --quality 35 --target game --out /tmp/disco.jpg
 python tools/disco_client.py gaze --window "Disco Elysium" --caption-provider gemini
 python tools/disco_client.py gaze --window "Disco Elysium" --caption-provider glm
 python tools/disco_client.py gaze --window "Disco Elysium" --caption-provider mock

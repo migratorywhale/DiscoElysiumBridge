@@ -77,18 +77,42 @@ def disco_key(name: str, hold: int = 0) -> str:
 
 
 @mcp.tool()
-def disco_screenshot(scale: float = 0.5) -> list:
-    """Capture a scaled JPEG screenshot from the game/desktop."""
-    scale = max(0.1, min(float(scale), 1.0))
-    data = request_json("/screenshot", {"scale": scale, "format": "jpeg"})
+def disco_screenshot(
+    scale: float = 0.25,
+    quality: int = 35,
+    target: str = "game",
+    max_bytes: int = 750000,
+) -> list:
+    """Capture a compressed screenshot. On macOS, target=game crops to the game window when possible."""
+    scale = max(0.05, min(float(scale), 1.0))
+    quality = max(10, min(int(quality), 95))
+    max_bytes = max(20_000, min(int(max_bytes), 5_000_000))
+    params = {"scale": scale, "format": "jpeg", "quality": quality, "target": target, "max_bytes": max_bytes}
+    data = request_json("/screenshot", params)
     image_b64 = data.get("data")
     if not image_b64:
         return [compact(data)]
 
     image_bytes = base64.b64decode(image_b64)
+    if len(image_bytes) > max_bytes and scale > 0.06:
+        retry_scale = max(0.05, scale * 0.65)
+        data = request_json(
+            "/screenshot",
+            {**params, "scale": retry_scale, "quality": min(quality, 25), "max_bytes": max_bytes},
+        )
+        image_b64 = data.get("data")
+        if image_b64:
+            image_bytes = base64.b64decode(image_b64)
+
     meta = {k: v for k, v in data.items() if k != "data"}
+    if len(image_bytes) > max_bytes:
+        meta["error"] = f"screenshot still too large for MCP image return: {len(image_bytes)} bytes"
+        meta["hint"] = "Try smaller scale, lower quality, or use disco_gaze."
+        return [compact(meta)]
+
+    image_format = data.get("format", "jpeg")
     return [
-        Image(data=image_bytes, format="jpeg"),
+        Image(data=image_bytes, format=image_format),
         compact(meta),
     ]
 

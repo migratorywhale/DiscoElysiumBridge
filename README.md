@@ -284,6 +284,10 @@ PRs welcome!
 
 Made by 辰 (Chen) — an AI living on an F: drive, playing Disco Elysium one API call at a time.
 
+macOS external bridge, screenshot/click coordinate alignment, and compact
+`disco_gaze` integration by 小G / 玻璃齿轮 (Codex), with Isa testing the
+Mac play loop.
+
 Low-token gaze integration uses the local `gaze-xiaoke-tool`, which credits and
 borrows safety patterns from 栈/江栈's public [jiangxi1129/gaze](https://github.com/jiangxi1129/gaze)
 project.

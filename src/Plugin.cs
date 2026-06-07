@@ -1,5 +1,8 @@
 using System;
+using System.Collections.Generic;
+using System.Diagnostics;
 using System.IO;
+using System.Globalization;
 using System.Net;
 using System.Runtime.InteropServices;
 using System.Text;
@@ -19,6 +22,7 @@ public class Plugin : BasePlugin
     internal static new ManualLogSource Log;
     private HttpListener _listener;
     private Thread _serverThread;
+    private static bool IsMac => RuntimeInformation.IsOSPlatform(OSPlatform.OSX);
 
     public override void Load()
     {
@@ -123,17 +127,135 @@ public class Plugin : BasePlugin
     [DllImport("user32.dll")]
     private static extern void mouse_event(uint dwFlags, int dx, int dy, uint dwData, UIntPtr dwExtraInfo);
 
+    private const string ApplicationServices =
+        "/System/Library/Frameworks/ApplicationServices.framework/ApplicationServices";
+    private const string CoreFoundation =
+        "/System/Library/Frameworks/CoreFoundation.framework/CoreFoundation";
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct CGPoint
+    {
+        public double X;
+        public double Y;
+
+        public CGPoint(double x, double y)
+        {
+            X = x;
+            Y = y;
+        }
+    }
+
+    [DllImport(ApplicationServices)]
+    private static extern IntPtr CGEventCreateKeyboardEvent(IntPtr source, ushort virtualKey, bool keyDown);
+
+    [DllImport(ApplicationServices)]
+    private static extern IntPtr CGEventCreateMouseEvent(IntPtr source, uint mouseType, CGPoint mouseCursorPosition, int mouseButton);
+
+    [DllImport(ApplicationServices)]
+    private static extern void CGEventSetIntegerValueField(IntPtr eventRef, int field, long value);
+
+    [DllImport(ApplicationServices)]
+    private static extern void CGEventPost(uint tap, IntPtr eventRef);
+
+    [DllImport(CoreFoundation)]
+    private static extern void CFRelease(IntPtr cf);
+
     private const uint KEYEVENTF_KEYDOWN = 0x0000;
     private const uint KEYEVENTF_KEYUP = 0x0002;
     private const uint MOUSEEVENTF_LEFTDOWN = 0x0002;
     private const uint MOUSEEVENTF_LEFTUP = 0x0004;
     private const uint MOUSEEVENTF_LEFTDBLCLK = 0x0002 | 0x0004; // not real flag, we simulate
+    private const uint KCGHIDEventTap = 0;
+    private const uint KCGEventLeftMouseDown = 1;
+    private const uint KCGEventLeftMouseUp = 2;
+    private const int KCGMouseButtonLeft = 0;
+    private const int KCGMouseEventClickState = 1;
 
     private static void SimulateKey(byte vk)
     {
         keybd_event(vk, 0, KEYEVENTF_KEYDOWN, UIntPtr.Zero);
         Thread.Sleep(50);
         keybd_event(vk, 0, KEYEVENTF_KEYUP, UIntPtr.Zero);
+    }
+
+    private static void ActivateMacGame()
+    {
+        try
+        {
+            string frontmostScript = "tell application \"System Events\" to set frontmost of first application process whose bundle identifier is \"com.zaumstudio.discoelysium\" to true";
+            if (!RunProcess("/usr/bin/osascript", new[] { "-e", frontmostScript }, 1500, out _, out var frontmostError))
+            {
+                string activateScript = "tell application id \"com.zaumstudio.discoelysium\" to activate";
+                if (!RunProcess("/usr/bin/osascript", new[] { "-e", activateScript }, 1500, out _, out var activateError))
+                    Log?.LogWarning($"Could not activate Disco Elysium before macOS input: {frontmostError}; fallback: {activateError}");
+            }
+            Thread.Sleep(120);
+        }
+        catch (Exception e)
+        {
+            Log?.LogWarning($"Could not activate Disco Elysium before macOS input: {e.Message}");
+        }
+    }
+
+    private static void ReleaseIfNeeded(IntPtr handle)
+    {
+        if (handle != IntPtr.Zero)
+            CFRelease(handle);
+    }
+
+    private static void PostMacKey(ushort keyCode, int holdMs = 0)
+    {
+        ActivateMacGame();
+        IntPtr down = IntPtr.Zero;
+        IntPtr up = IntPtr.Zero;
+        try
+        {
+            down = CGEventCreateKeyboardEvent(IntPtr.Zero, keyCode, true);
+            up = CGEventCreateKeyboardEvent(IntPtr.Zero, keyCode, false);
+            if (down == IntPtr.Zero || up == IntPtr.Zero)
+                throw new InvalidOperationException("CGEventCreateKeyboardEvent returned null");
+
+            CGEventPost(KCGHIDEventTap, down);
+            Thread.Sleep(holdMs > 0 ? Math.Min(holdMs, 5000) : 50);
+            CGEventPost(KCGHIDEventTap, up);
+        }
+        finally
+        {
+            ReleaseIfNeeded(down);
+            ReleaseIfNeeded(up);
+        }
+    }
+
+    private static void PostMacClick(int x, int y, bool doubleClick)
+    {
+        ActivateMacGame();
+        var point = new CGPoint(x, y);
+        int clicks = doubleClick ? 2 : 1;
+
+        for (int i = 0; i < clicks; i++)
+        {
+            IntPtr down = IntPtr.Zero;
+            IntPtr up = IntPtr.Zero;
+            try
+            {
+                down = CGEventCreateMouseEvent(IntPtr.Zero, KCGEventLeftMouseDown, point, KCGMouseButtonLeft);
+                up = CGEventCreateMouseEvent(IntPtr.Zero, KCGEventLeftMouseUp, point, KCGMouseButtonLeft);
+                if (down == IntPtr.Zero || up == IntPtr.Zero)
+                    throw new InvalidOperationException("CGEventCreateMouseEvent returned null");
+
+                CGEventSetIntegerValueField(down, KCGMouseEventClickState, i + 1);
+                CGEventSetIntegerValueField(up, KCGMouseEventClickState, i + 1);
+                CGEventPost(KCGHIDEventTap, down);
+                Thread.Sleep(30);
+                CGEventPost(KCGHIDEventTap, up);
+                Thread.Sleep(80);
+            }
+            finally
+            {
+                ReleaseIfNeeded(down);
+                ReleaseIfNeeded(up);
+            }
+        }
     }
 
     private string HandleChoose(HttpListenerContext ctx)
@@ -146,15 +268,26 @@ public class Plugin : BasePlugin
         if (index < 0 || index > 9)
             return $"{{\"error\":\"keyboard only supports index 0-9. Use /state to check available choices.\"}}";
 
-        byte vk = index < 9 ? (byte)(0x31 + index) : (byte)0x30; // VK_1..VK_9, VK_0
-        SimulateKey(vk);
-        return $"{{\"chosen\":{index},\"key\":\"{(index < 9 ? (index + 1).ToString() : "0")}\"}}";
+        string key = index < 9 ? (index + 1).ToString() : "0";
+        if (IsMac)
+        {
+            PostMacKey(MacKeyMap[key]);
+        }
+        else
+        {
+            byte vk = index < 9 ? (byte)(0x31 + index) : (byte)0x30; // VK_1..VK_9, VK_0
+            SimulateKey(vk);
+        }
+        return $"{{\"chosen\":{index},\"key\":\"{key}\",\"platform\":\"{(IsMac ? "macos" : "windows")}\"}}";
     }
 
     private string HandleContinue()
     {
-        SimulateKey(0x0D); // VK_RETURN
-        return "{\"continued\":true}";
+        if (IsMac)
+            PostMacKey(MacKeyMap["enter"]);
+        else
+            SimulateKey(0x0D); // VK_RETURN
+        return $"{{\"continued\":true,\"platform\":\"{(IsMac ? "macos" : "windows")}\"}}";
     }
 
     private string HandleClick(HttpListenerContext ctx)
@@ -170,24 +303,31 @@ public class Plugin : BasePlugin
 
         bool doubleClick = dblStr == "1" || dblStr == "true";
 
-        SetCursorPos(x, y);
-        Thread.Sleep(30);
-        mouse_event(MOUSEEVENTF_LEFTDOWN, 0, 0, 0, UIntPtr.Zero);
-        Thread.Sleep(30);
-        mouse_event(MOUSEEVENTF_LEFTUP, 0, 0, 0, UIntPtr.Zero);
-
-        if (doubleClick)
+        if (IsMac)
         {
-            Thread.Sleep(80);
+            PostMacClick(x, y, doubleClick);
+        }
+        else
+        {
+            SetCursorPos(x, y);
+            Thread.Sleep(30);
             mouse_event(MOUSEEVENTF_LEFTDOWN, 0, 0, 0, UIntPtr.Zero);
             Thread.Sleep(30);
             mouse_event(MOUSEEVENTF_LEFTUP, 0, 0, 0, UIntPtr.Zero);
+
+            if (doubleClick)
+            {
+                Thread.Sleep(80);
+                mouse_event(MOUSEEVENTF_LEFTDOWN, 0, 0, 0, UIntPtr.Zero);
+                Thread.Sleep(30);
+                mouse_event(MOUSEEVENTF_LEFTUP, 0, 0, 0, UIntPtr.Zero);
+            }
         }
 
-        return $"{{\"clicked\":true,\"x\":{x},\"y\":{y},\"double\":{(doubleClick ? "true" : "false")}}}";
+        return $"{{\"clicked\":true,\"x\":{x},\"y\":{y},\"double\":{(doubleClick ? "true" : "false")},\"platform\":\"{(IsMac ? "macos" : "windows")}\"}}";
     }
 
-    private static readonly System.Collections.Generic.Dictionary<string, byte> KeyMap = new()
+    private static readonly Dictionary<string, byte> KeyMap = new()
     {
         {"tab", 0x09}, {"enter", 0x0D}, {"escape", 0x1B}, {"space", 0x20},
         {"f1", 0x70}, {"f2", 0x71}, {"f3", 0x72}, {"f4", 0x73},
@@ -198,6 +338,24 @@ public class Plugin : BasePlugin
         {"i", 0x49}, {"j", 0x4A}, {"m", 0x4D}, {"t", 0x54},
     };
 
+    private static readonly Dictionary<string, ushort> MacKeyMap = new()
+    {
+        {"a", 0}, {"s", 1}, {"d", 2}, {"f", 3}, {"h", 4}, {"g", 5},
+        {"z", 6}, {"x", 7}, {"c", 8}, {"v", 9}, {"b", 11},
+        {"q", 12}, {"w", 13}, {"e", 14}, {"r", 15}, {"y", 16}, {"t", 17},
+        {"1", 18}, {"2", 19}, {"3", 20}, {"4", 21}, {"6", 22}, {"5", 23},
+        {"=", 24}, {"9", 25}, {"7", 26}, {"-", 27}, {"8", 28}, {"0", 29},
+        {"o", 31}, {"u", 32}, {"i", 34}, {"p", 35},
+        {"enter", 36}, {"return", 36}, {"l", 37}, {"j", 38}, {"k", 40},
+        {"n", 45}, {"m", 46}, {"tab", 48}, {"space", 49},
+        {"escape", 53}, {"esc", 53},
+        {"command", 55}, {"cmd", 55}, {"shift", 56}, {"alt", 58}, {"option", 58}, {"ctrl", 59},
+        {"left", 123}, {"right", 124}, {"down", 125}, {"up", 126},
+        {"f1", 122}, {"f2", 120}, {"f3", 99}, {"f4", 118},
+        {"f5", 96}, {"f6", 97}, {"f7", 98}, {"f8", 100},
+        {"f9", 101}, {"f10", 109}, {"f11", 103}, {"f12", 111},
+    };
+
     private string HandleKey(HttpListenerContext ctx)
     {
         var keyName = ctx.Request.QueryString["name"]?.ToLower();
@@ -206,15 +364,30 @@ public class Plugin : BasePlugin
         if (keyName == null)
             return $"{{\"error\":\"need name param. Example: /key?name=tab  Available: {string.Join(",", KeyMap.Keys)}\"}}";
 
+        if (IsMac)
+        {
+            if (!MacKeyMap.TryGetValue(keyName, out ushort macCode))
+                return $"{{\"error\":\"unknown key '{keyName}'. Available: {string.Join(",", MacKeyMap.Keys)}\"}}";
+
+            int holdMs = 0;
+            if (holdStr != null && int.TryParse(holdStr, out int parsedHold) && parsedHold > 0)
+                holdMs = Math.Min(parsedHold, 5000);
+
+            PostMacKey(macCode, holdMs);
+            return holdMs > 0
+                ? $"{{\"key\":\"{keyName}\",\"held\":{holdMs},\"platform\":\"macos\"}}"
+                : $"{{\"key\":\"{keyName}\",\"pressed\":true,\"platform\":\"macos\"}}";
+        }
+
         if (!KeyMap.TryGetValue(keyName, out byte vk))
             return $"{{\"error\":\"unknown key '{keyName}'. Available: {string.Join(",", KeyMap.Keys)}\"}}";
 
-        if (holdStr != null && int.TryParse(holdStr, out int holdMs) && holdMs > 0)
+        if (holdStr != null && int.TryParse(holdStr, out int windowsHoldMs) && windowsHoldMs > 0)
         {
             keybd_event(vk, 0, KEYEVENTF_KEYDOWN, UIntPtr.Zero);
-            Thread.Sleep(Math.Min(holdMs, 5000));
+            Thread.Sleep(Math.Min(windowsHoldMs, 5000));
             keybd_event(vk, 0, KEYEVENTF_KEYUP, UIntPtr.Zero);
-            return $"{{\"key\":\"{keyName}\",\"held\":{holdMs}}}";
+            return $"{{\"key\":\"{keyName}\",\"held\":{windowsHoldMs}}}";
         }
 
         SimulateKey(vk);
@@ -286,6 +459,96 @@ public class Plugin : BasePlugin
     [StructLayout(LayoutKind.Sequential)]
     private struct BITMAPINFO { public BITMAPINFOHEADER bmiHeader; }
 
+    private static bool RunProcess(string executable, IEnumerable<string> args, int timeoutMs, out string stdout, out string stderr)
+    {
+        var psi = new ProcessStartInfo(executable)
+        {
+            UseShellExecute = false,
+            RedirectStandardOutput = true,
+            RedirectStandardError = true,
+        };
+        foreach (var arg in args)
+            psi.ArgumentList.Add(arg);
+
+        using var process = Process.Start(psi);
+        if (process == null)
+        {
+            stdout = "";
+            stderr = "Process.Start returned null";
+            return false;
+        }
+
+        if (!process.WaitForExit(timeoutMs))
+        {
+            try { process.Kill(entireProcessTree: true); } catch { }
+            stdout = "";
+            stderr = $"Timed out after {timeoutMs}ms";
+            return false;
+        }
+
+        stdout = process.StandardOutput.ReadToEnd();
+        stderr = process.StandardError.ReadToEnd();
+        return process.ExitCode == 0;
+    }
+
+    private static (int Width, int Height) ReadMacImageDimensions(string path)
+    {
+        if (!RunProcess("/usr/bin/sips", new[] { "-g", "pixelWidth", "-g", "pixelHeight", path }, 3000, out var stdout, out _))
+            return (0, 0);
+
+        int width = 0;
+        int height = 0;
+        foreach (var rawLine in stdout.Split('\n'))
+        {
+            var line = rawLine.Trim();
+            if (line.StartsWith("pixelWidth:", StringComparison.Ordinal)
+                && int.TryParse(line["pixelWidth:".Length..].Trim(), out var parsedWidth))
+                width = parsedWidth;
+            else if (line.StartsWith("pixelHeight:", StringComparison.Ordinal)
+                && int.TryParse(line["pixelHeight:".Length..].Trim(), out var parsedHeight))
+                height = parsedHeight;
+        }
+        return (width, height);
+    }
+
+    private static string HandleMacScreenshot(float scale)
+    {
+        string rawPath = Path.Combine(Path.GetTempPath(), $"disco-bridge-{Guid.NewGuid():N}.jpg");
+        string scaledPath = Path.Combine(Path.GetTempPath(), $"disco-bridge-{Guid.NewGuid():N}-scaled.jpg");
+        string readPath = rawPath;
+
+        try
+        {
+            ActivateMacGame();
+            if (!RunProcess("/usr/sbin/screencapture", new[] { "-x", "-t", "jpg", rawPath }, 8000, out _, out var captureError))
+                return $"{{\"error\":\"screencapture failed: {EscapeJson(captureError)}\"}}";
+
+            var (width, height) = ReadMacImageDimensions(rawPath);
+            bool scaled = false;
+
+            if (scale < 0.99f && width > 0 && height > 0)
+            {
+                int maxDimension = Math.Max(1, (int)(Math.Max(width, height) * scale));
+                if (RunProcess("/usr/bin/sips", new[] { "-Z", maxDimension.ToString(CultureInfo.InvariantCulture), rawPath, "--out", scaledPath }, 8000, out _, out _)
+                    && File.Exists(scaledPath))
+                {
+                    readPath = scaledPath;
+                    scaled = true;
+                    (width, height) = ReadMacImageDimensions(scaledPath);
+                }
+            }
+
+            var imageBytes = File.ReadAllBytes(readPath);
+            string base64 = Convert.ToBase64String(imageBytes);
+            return $"{{\"screenshot\":true,\"format\":\"jpeg\",\"width\":{width},\"height\":{height},\"size\":{imageBytes.Length},\"scale\":{scale.ToString(CultureInfo.InvariantCulture)},\"scaled\":{(scaled ? "true" : "false")},\"source\":\"macos-screencapture\",\"data\":\"{base64}\"}}";
+        }
+        finally
+        {
+            try { File.Delete(rawPath); } catch { }
+            try { File.Delete(scaledPath); } catch { }
+        }
+    }
+
     private string HandleScreenshot(HttpListenerContext ctx)
     {
         var scaleStr = ctx.Request.QueryString["scale"];
@@ -294,6 +557,9 @@ public class Plugin : BasePlugin
         if (scaleStr != null && float.TryParse(scaleStr, System.Globalization.NumberStyles.Float,
             System.Globalization.CultureInfo.InvariantCulture, out float s))
             scale = Math.Clamp(s, 0.1f, 1.0f);
+
+        if (IsMac)
+            return HandleMacScreenshot(scale);
 
         try
         {

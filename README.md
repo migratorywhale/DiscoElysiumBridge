@@ -35,8 +35,8 @@ The mod runs an HTTP server on `localhost:7860` with these endpoints:
 
 - BepInEx IL2CPP plugin injects into the Unity game process
 - HTTP server runs on a background thread
-- Mouse/keyboard input via Windows API (`user32.dll` `mouse_event`/`keybd_event`)
-- Screenshots via Windows GDI (`gdi32.dll` BitBlt), JPEG via GDI+
+- Mouse/keyboard input via Windows API on Windows, CoreGraphics events on macOS
+- Screenshots via Windows GDI on Windows, `screencapture` on macOS
 - No game method hooking needed for input (pure OS-level simulation)
 - Dialogue state tracking via Harmony patches on PixelCrushers DialogueSystem
 
@@ -100,11 +100,13 @@ The prepare script creates reversible symlinks for Unity/BepInEx path detection
 and disables BepInEx's `ScanMethodRefs` pass, which can fail during Mach-O
 interop generation.
 
-Current macOS target: the internal plugin loads and `/health` plus `/state` work
-when called as `http://localhost:7860/...`. `http://127.0.0.1:7860/...` may not
-match the `HttpListener` prefix. The control endpoints (`/choose`, `/continue`,
-`/click`, `/key`, `/screenshot`) still use Windows APIs and need macOS-native
-replacements before they can be used inside the BepInEx plugin on Mac.
+Current macOS target: the internal plugin loads and `/health`, `/state`,
+`/choose`, `/continue`, `/click`, `/key`, and `/screenshot` work when called as
+`http://localhost:7860/...`. `http://127.0.0.1:7860/...` may not match the
+`HttpListener` prefix. macOS input is posted with CoreGraphics events after
+bringing the Disco Elysium process to the front; macOS screenshots use
+`screencapture` and are intended as a simple whole-screen fallback. Prefer
+`disco_gaze` for low-token window-focused observation.
 
 Harmony dialogue patches are skipped on macOS because applying them through
 Dobby under Rosetta currently crashes during native detour preparation. The
@@ -247,18 +249,17 @@ Use `disco_screenshot` only when the model needs actual pixels.
 Current status:
 
 - Windows: full prototype support for state, input, and screenshots.
-- macOS: install/build prototype added; first target is plugin load plus
-  `/health` and `/state`.
+- macOS: internal BepInEx plugin loads with the local runtime patch; health,
+  state, input, and whole-screen screenshots work. Harmony dialogue patches are
+  still skipped on macOS.
 
 ### Porting to macOS
 
-The core HTTP server and dialogue hooks are likely platform-independent. To
-complete the macOS port:
+Remaining macOS polish:
 
-1. Replace `user32.dll` imports (`mouse_event`, `keybd_event`, `SetCursorPos`) with macOS equivalents (`CGEventCreateMouseEvent`, `CGEventCreateKeyboardEvent` from CoreGraphics)
-2. Replace `gdi32.dll` screenshot code with macOS screen capture (`CGWindowListCreateImage`)
-3. Replace GDI+ JPEG encoding with macOS `NSBitmapImageRep` or a cross-platform library
-4. Keep Windows and macOS control code behind a platform abstraction so both ports can coexist
+1. Replace whole-screen `screencapture` with a true Disco Elysium window capture.
+2. Revisit Harmony dialogue hooks once the macOS/Rosetta Dobby crash is solved.
+3. Move Windows and macOS control code behind a cleaner platform abstraction.
 
 PRs welcome!
 

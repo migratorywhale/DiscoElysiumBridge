@@ -11,7 +11,17 @@ from pathlib import Path
 from typing import Any
 
 
-DEFAULT_GAZE_DIR = Path.home() / "Projects" / "gaze-xiaoke-tool"
+DEFAULT_GAZE_DIRS = (
+    Path.home() / "Projects" / "gaze",
+    Path.home() / "Projects" / "gaze-xiaoke-tool",
+)
+
+
+def default_gaze_dir() -> Path:
+    for path in DEFAULT_GAZE_DIRS:
+        if (path / "gaze_local.py").exists():
+            return path
+    return DEFAULT_GAZE_DIRS[0]
 
 
 def gaze_python(gaze_dir: Path) -> str:
@@ -34,14 +44,14 @@ def run_gaze_once(
     timeout: int = 45,
     strict_window: bool = True,
 ) -> dict[str, Any]:
-    gaze_dir = Path(os.environ.get("GAZE_TOOL_DIR", DEFAULT_GAZE_DIR)).expanduser()
+    gaze_dir = Path(os.environ.get("GAZE_TOOL_DIR", default_gaze_dir())).expanduser()
     gaze_local = gaze_dir / "gaze_local.py"
 
     if not gaze_local.exists():
         return {
             "ok": False,
             "error": f"gaze_local.py not found under {gaze_dir}",
-            "hint": "Set GAZE_TOOL_DIR to the gaze-xiaoke-tool repo.",
+            "hint": "Set GAZE_TOOL_DIR to the local gaze repo.",
         }
 
     if window and strict_window:

@@ -131,9 +131,10 @@ python tools/disco_client.py key tab --hold 2000
 python tools/disco_client.py click 500 300 --double
 ```
 
-The launcher uses `~/Projects/gaze-xiaoke-tool/.venv/bin/python` by default
+The launcher uses `~/Projects/gaze/.venv/bin/python` by default
 because that venv already has PyObjC/Quartz installed. Override with
-`DISCO_EXTERNAL_PYTHON` if needed.
+`DISCO_EXTERNAL_PYTHON` if needed. The legacy `~/Projects/gaze-xiaoke-tool`
+path is still accepted for older local setups.
 
 External bridge status:
 
@@ -235,7 +236,7 @@ Example Claude/Codex-style command:
 
 ### Low-token gaze
 
-`disco_gaze` uses the local `gaze-xiaoke-tool` repo to observe the Disco Elysium
+`disco_gaze` uses the local `gaze` repo to observe the Disco Elysium
 window and return compact OCR/vision caption entries instead of a full image.
 This is usually cheaper for model context than calling `disco_screenshot`.
 By default it refuses to return fullscreen fallback output when the named game
@@ -244,7 +245,7 @@ when you deliberately want the gaze tool's wide-door behavior.
 
 Defaults:
 
-- `GAZE_TOOL_DIR=~/Projects/gaze-xiaoke-tool`
+- `GAZE_TOOL_DIR=~/Projects/gaze`
 - `DISCO_GAZE_WINDOW="Disco Elysium"`
 - `DISCO_GAZE_PROVIDER=gemini`
 - `DISCO_GAZE_MASK=mac-safe`
@@ -288,6 +289,6 @@ macOS external bridge, screenshot/click coordinate alignment, and compact
 `disco_gaze` integration by 小G / 玻璃齿轮 (Codex), with Isa testing the
 Mac play loop.
 
-Low-token gaze integration uses the local `gaze-xiaoke-tool`, which credits and
-borrows safety patterns from 栈/江栈's public [jiangxi1129/gaze](https://github.com/jiangxi1129/gaze)
+Low-token gaze integration uses the local `gaze` repo, which credits and
+borrows safety patterns from 栈（江栈）'s public [jiangxi1129/gaze](https://github.com/jiangxi1129/gaze)
 project.

@@ -37,6 +37,29 @@ def compact(data: dict[str, Any]) -> str:
     return json.dumps(data, ensure_ascii=False, indent=2)
 
 
+def compact_gaze(data: dict[str, Any], *, include_meta: bool = False) -> str:
+    if include_meta:
+        return compact(data)
+
+    entries = data.get("entries")
+    if isinstance(entries, list):
+        data = dict(data)
+        data["entries"] = [
+            {
+                key: value
+                for key, value in entry.items()
+                if key in {"source", "caption"} and value
+            }
+            for entry in entries
+            if isinstance(entry, dict)
+        ]
+
+    for key in ("window", "caption_provider"):
+        data.pop(key, None)
+
+    return compact(data)
+
+
 @mcp.tool()
 def disco_health() -> str:
     """Check whether the Disco Elysium bridge mod is running."""
@@ -143,10 +166,11 @@ def disco_gaze(
     ocr: bool = True,
     mask_preset: str = "mac-safe",
     max_ocr_chars: int = 1200,
+    include_meta: bool = False,
     allow_fullscreen_fallback: bool = False,
 ) -> str:
     """Observe the Disco Elysium window through the local gaze tool and return compact text. Increase max_ocr_chars for dense dialogue screens."""
-    return compact(
+    return compact_gaze(
         run_gaze_once(
             window=window,
             caption_provider=caption_provider,
@@ -154,7 +178,8 @@ def disco_gaze(
             mask_preset=mask_preset,
             max_ocr_chars=max_ocr_chars,
             strict_window=not allow_fullscreen_fallback,
-        )
+        ),
+        include_meta=include_meta,
     )
 
 

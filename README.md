@@ -253,6 +253,8 @@ Defaults:
 Use `disco_screenshot` only when the model needs actual pixels.
 For text-heavy dialogue screens, call `disco_gaze(max_ocr_chars=2000)` or higher
 instead of taking a larger screenshot.
+`disco_gaze` strips repeated timestamp/window/app metadata by default to keep
+MCP output small; pass `include_meta=true` only when debugging capture state.
 
 When using the MCP wrapper, `disco_click` defaults to `target=game` and
 `scale=0.25`, matching the default `disco_screenshot`. In other words, click

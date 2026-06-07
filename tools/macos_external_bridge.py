@@ -1,0 +1,278 @@
+#!/usr/bin/env python3
+"""External macOS HTTP bridge for Disco Elysium.
+
+This fallback does not depend on the BepInEx plugin being loaded. It controls the
+frontmost game window with CoreGraphics events and exposes the same basic HTTP
+shape as DiscoElysiumBridge so the MCP wrapper can keep using one URL.
+"""
+
+from __future__ import annotations
+
+import argparse
+import base64
+import json
+import os
+import subprocess
+import tempfile
+import time
+import urllib.parse
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from pathlib import Path
+from typing import Any
+
+
+VERSION = "0.1.0"
+APP_BUNDLE_ID = os.environ.get("DISCO_APP_BUNDLE_ID", "com.zaumstudio.discoelysium")
+
+try:
+    import Quartz  # type: ignore
+except Exception as exc:  # pragma: no cover - depends on local pyobjc install.
+    Quartz = None  # type: ignore
+    QUARTZ_ERROR = str(exc)
+else:
+    QUARTZ_ERROR = ""
+
+
+KEY_CODES: dict[str, int] = {
+    "a": 0,
+    "s": 1,
+    "d": 2,
+    "f": 3,
+    "h": 4,
+    "g": 5,
+    "z": 6,
+    "x": 7,
+    "c": 8,
+    "v": 9,
+    "b": 11,
+    "q": 12,
+    "w": 13,
+    "e": 14,
+    "r": 15,
+    "y": 16,
+    "t": 17,
+    "1": 18,
+    "2": 19,
+    "3": 20,
+    "4": 21,
+    "6": 22,
+    "5": 23,
+    "=": 24,
+    "9": 25,
+    "7": 26,
+    "-": 27,
+    "8": 28,
+    "0": 29,
+    "o": 31,
+    "u": 32,
+    "i": 34,
+    "p": 35,
+    "enter": 36,
+    "return": 36,
+    "l": 37,
+    "j": 38,
+    "k": 40,
+    "n": 45,
+    "m": 46,
+    "tab": 48,
+    "space": 49,
+    "escape": 53,
+    "esc": 53,
+    "left": 123,
+    "right": 124,
+    "down": 125,
+    "up": 126,
+    "f1": 122,
+    "f2": 120,
+    "f3": 99,
+    "f4": 118,
+    "f5": 96,
+    "f6": 97,
+    "f7": 98,
+    "f8": 100,
+    "f9": 101,
+    "f10": 109,
+    "f11": 103,
+    "f12": 111,
+}
+
+
+def activate_game() -> None:
+    subprocess.run(
+        ["osascript", "-e", f'tell application id "{APP_BUNDLE_ID}" to activate'],
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+        check=False,
+    )
+    time.sleep(0.05)
+
+
+def require_quartz() -> Any:
+    if Quartz is None:
+        raise RuntimeError(
+            "Quartz is not available. Run with the gaze venv Python or install pyobjc-framework-Quartz. "
+            f"Import error: {QUARTZ_ERROR}"
+        )
+    return Quartz
+
+
+def post_key(name: str, hold_ms: int = 0) -> dict[str, Any]:
+    q = require_quartz()
+    key = name.lower()
+    if key not in KEY_CODES:
+        return {"error": f"unknown key {name!r}", "available": sorted(KEY_CODES)}
+
+    activate_game()
+    code = KEY_CODES[key]
+    down = q.CGEventCreateKeyboardEvent(None, code, True)
+    up = q.CGEventCreateKeyboardEvent(None, code, False)
+    q.CGEventPost(q.kCGHIDEventTap, down)
+    if hold_ms > 0:
+        time.sleep(min(hold_ms, 5000) / 1000)
+    else:
+        time.sleep(0.05)
+    q.CGEventPost(q.kCGHIDEventTap, up)
+    return {"key": key, "held": hold_ms} if hold_ms > 0 else {"key": key, "pressed": True}
+
+
+def post_click(x: int, y: int, double: bool = False) -> dict[str, Any]:
+    q = require_quartz()
+    activate_game()
+    point = (x, y)
+    for i in range(2 if double else 1):
+        down = q.CGEventCreateMouseEvent(None, q.kCGEventLeftMouseDown, point, q.kCGMouseButtonLeft)
+        up = q.CGEventCreateMouseEvent(None, q.kCGEventLeftMouseUp, point, q.kCGMouseButtonLeft)
+        q.CGEventSetIntegerValueField(down, q.kCGMouseEventClickState, i + 1)
+        q.CGEventSetIntegerValueField(up, q.kCGMouseEventClickState, i + 1)
+        q.CGEventPost(q.kCGHIDEventTap, down)
+        time.sleep(0.03)
+        q.CGEventPost(q.kCGHIDEventTap, up)
+        time.sleep(0.08)
+    return {"clicked": True, "x": x, "y": y, "double": double}
+
+
+def capture_screenshot() -> dict[str, Any]:
+    with tempfile.NamedTemporaryFile(suffix=".jpg", delete=False) as tmp:
+        path = Path(tmp.name)
+    try:
+        subprocess.run(["screencapture", "-x", "-t", "jpg", str(path)], check=True)
+        data = path.read_bytes()
+        return {
+            "screenshot": True,
+            "format": "jpeg",
+            "size": len(data),
+            "data": base64.b64encode(data).decode("ascii"),
+            "source": "macos-screencapture",
+        }
+    finally:
+        path.unlink(missing_ok=True)
+
+
+def choose_index(index: int) -> dict[str, Any]:
+    if index < 0 or index > 9:
+        return {"error": "keyboard only supports index 0-9"}
+    key = str(index + 1) if index < 9 else "0"
+    result = post_key(key)
+    result.update({"chosen": index, "key": key})
+    return result
+
+
+def external_state() -> dict[str, Any]:
+    return {
+        "conversationActive": False,
+        "source": "macos-external",
+        "note": "External bridge cannot read in-game dialogue state; use disco_gaze for screen text.",
+        "lastText": "",
+        "lastSpeaker": "",
+    }
+
+
+def health() -> dict[str, Any]:
+    return {
+        "status": "ok",
+        "mod": "DiscoElysiumBridge",
+        "mode": "macos-external",
+        "version": VERSION,
+        "quartz": Quartz is not None,
+        "quartzError": QUARTZ_ERROR,
+    }
+
+
+class Handler(BaseHTTPRequestHandler):
+    def do_GET(self) -> None:  # noqa: N802 - stdlib callback name.
+        parsed = urllib.parse.urlparse(self.path)
+        params = urllib.parse.parse_qs(parsed.query)
+        try:
+            payload = self.route(parsed.path, params)
+        except Exception as exc:
+            payload = {"error": str(exc)}
+        self.respond(payload)
+
+    def route(self, path: str, params: dict[str, list[str]]) -> dict[str, Any]:
+        if path == "/health":
+            return health()
+        if path == "/state":
+            return external_state()
+        if path == "/continue":
+            result = post_key("enter")
+            result["continued"] = True
+            return result
+        if path == "/choose":
+            return choose_index(int(one(params, "index", "0")))
+        if path == "/click":
+            x = int(one(params, "x"))
+            y = int(one(params, "y"))
+            double = one(params, "double", "0").lower() in {"1", "true", "yes"}
+            return post_click(x, y, double)
+        if path == "/key":
+            name = one(params, "name")
+            hold = int(one(params, "hold", "0"))
+            return post_key(name, hold)
+        if path == "/screenshot":
+            return capture_screenshot()
+        return {
+            "error": "unknown endpoint",
+            "endpoints": ["/health", "/state", "/choose", "/continue", "/click", "/key", "/screenshot"],
+        }
+
+    def respond(self, payload: dict[str, Any]) -> None:
+        raw = json.dumps(payload, ensure_ascii=False).encode("utf-8")
+        self.send_response(200)
+        self.send_header("Content-Type", "application/json; charset=utf-8")
+        self.send_header("Access-Control-Allow-Origin", "*")
+        self.send_header("Content-Length", str(len(raw)))
+        self.end_headers()
+        self.wfile.write(raw)
+
+    def log_message(self, fmt: str, *args: Any) -> None:
+        print(f"[macos-external] {self.address_string()} {fmt % args}")
+
+
+def one(params: dict[str, list[str]], key: str, default: str | None = None) -> str:
+    values = params.get(key)
+    if values:
+        return values[0]
+    if default is not None:
+        return default
+    raise ValueError(f"need {key} param")
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description="External macOS bridge for Disco Elysium.")
+    parser.add_argument("--host", default=os.environ.get("DISCO_EXTERNAL_HOST", "127.0.0.1"))
+    parser.add_argument("--port", type=int, default=int(os.environ.get("DISCO_EXTERNAL_PORT", "7860")))
+    args = parser.parse_args()
+
+    server = ThreadingHTTPServer((args.host, args.port), Handler)
+    print(f"macOS external Disco bridge listening on http://{args.host}:{args.port}")
+    print(json.dumps(health(), ensure_ascii=False))
+    try:
+        server.serve_forever()
+    except KeyboardInterrupt:
+        return 0
+    finally:
+        server.server_close()
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

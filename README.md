@@ -85,6 +85,39 @@ The control endpoints (`/choose`, `/continue`, `/click`, `/key`, `/screenshot`)
 still use Windows APIs and need macOS-native replacements before they can be
 used on Mac.
 
+Current diagnostic note: the macOS BepInEx path can now generate interop
+assemblies, and the extra `GameAssembly.dylib` symlinks let the chainloader get
+past the old "Could not locate Il2Cpp game assembly" fatal. On this Mac, the
+plugin still does not execute because BepInEx's runtime-invoke scene-change hook
+does not reach plugin loading. Use the external bridge fallback below while the
+internal BepInEx hook is being investigated.
+
+### macOS external bridge fallback
+
+If the BepInEx chainloader reaches the game but does not execute plugins, use the
+external bridge first. It does not read in-game dialogue state, but it exposes
+the same basic HTTP endpoints and controls the game with macOS CoreGraphics
+events:
+
+```bash
+scripts/start-macos-external.sh
+python tools/disco_client.py health
+python tools/disco_client.py gaze --window "Disco Elysium" --caption-provider gemini
+python tools/disco_client.py key tab --hold 2000
+python tools/disco_client.py click 500 300 --double
+```
+
+The launcher uses `~/Projects/gaze-xiaoke-tool/.venv/bin/python` by default
+because that venv already has PyObjC/Quartz installed. Override with
+`DISCO_EXTERNAL_PYTHON` if needed.
+
+External bridge status:
+
+- `/health`: real external bridge health.
+- `/state`: placeholder state; use `disco_gaze` for screen text.
+- `/choose`, `/continue`, `/click`, `/key`: macOS CoreGraphics events.
+- `/screenshot`: macOS `screencapture`.
+
 ## Building
 
 ```bash

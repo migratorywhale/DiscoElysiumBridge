@@ -6,6 +6,7 @@ import json
 import os
 import subprocess
 import sys
+import time
 from pathlib import Path
 from typing import Any
 
@@ -53,6 +54,89 @@ def run_gaze_once(
                 "entries": [],
             }
 
+    if window:
+        activate_macos_app(os.environ.get("DISCO_APP_BUNDLE_ID", "com.zaumstudio.discoelysium"))
+
+    cmd = build_gaze_command(
+        gaze_dir=gaze_dir,
+        gaze_local=gaze_local,
+        window=window,
+        caption_provider=caption_provider,
+        ocr=ocr,
+        mask_preset=mask_preset,
+        strict_window=strict_window,
+    )
+
+    try:
+        result = run_command(cmd, gaze_dir, timeout)
+    except Exception as exc:
+        return {"ok": False, "error": str(exc), "window": window}
+    retried_fullscreen = False
+    if (
+        strict_window
+        and result is not None
+        and result.returncode != 0
+        and "could not create image from window" in (result.stderr or "").lower()
+    ):
+        # Unity/Metal fullscreen windows can be visible but unavailable to
+        # `screencapture -l`. If we got this exact failure after activating the
+        # game, fullscreen fallback is narrower than it sounds: it should be the
+        # game itself.
+        cmd = build_gaze_command(
+            gaze_dir=gaze_dir,
+            gaze_local=gaze_local,
+            window=window,
+            caption_provider=caption_provider,
+            ocr=ocr,
+            mask_preset=mask_preset,
+            strict_window=False,
+        )
+        try:
+            result = run_command(cmd, gaze_dir, timeout)
+        except Exception as exc:
+            return {"ok": False, "error": str(exc), "window": window}
+        retried_fullscreen = True
+
+    if result is None:
+        return {"ok": False, "error": f"gaze timed out after {timeout}s", "window": window}
+
+    entries = parse_gaze_entries(result.stdout)
+    window_missing = "window not found" in result.stderr.lower()
+    if window_missing and strict_window and not retried_fullscreen:
+        entries = []
+
+    response: dict[str, Any] = {
+        "ok": result.returncode == 0 and not (window_missing and strict_window and not retried_fullscreen),
+        "window": window,
+        "caption_provider": caption_provider,
+        "entries": entries,
+    }
+
+    if retried_fullscreen:
+        response["fallback"] = "fullscreen-after-window-capture-failure"
+    if not entries:
+        response["message"] = "No gaze caption entries were produced."
+    if window_missing and strict_window and not retried_fullscreen:
+        response["error"] = f"window not found: {window!r}"
+        response["hint"] = "Launch Disco Elysium first. Fullscreen fallback was suppressed."
+    elif result.returncode != 0:
+        response["error"] = tail_text(result.stderr or result.stdout)
+    elif result.stderr.strip():
+        response["warnings"] = tail_text(result.stderr)
+
+    return response
+
+
+def build_gaze_command(
+    *,
+    gaze_dir: Path,
+    gaze_local: Path,
+    window: str,
+    caption_provider: str,
+    ocr: bool,
+    mask_preset: str,
+    strict_window: bool,
+) -> list[str]:
     cmd = [
         gaze_python(gaze_dir),
         str(gaze_local),
@@ -76,7 +160,10 @@ def run_gaze_once(
         cmd.append("--strict-window")
     else:
         cmd.append("--allow-fullscreen-fallback")
+    return cmd
 
+
+def run_command(cmd: list[str], gaze_dir: Path, timeout: int) -> subprocess.CompletedProcess[str] | None:
     env = os.environ.copy()
     env.setdefault("PYTHONUNBUFFERED", "1")
 
@@ -92,33 +179,20 @@ def run_gaze_once(
             check=False,
         )
     except subprocess.TimeoutExpired:
-        return {"ok": False, "error": f"gaze timed out after {timeout}s", "window": window}
+        return None
     except Exception as exc:
-        return {"ok": False, "error": str(exc), "window": window}
+        raise RuntimeError(str(exc)) from exc
+    return result
 
-    entries = parse_gaze_entries(result.stdout)
-    window_missing = "window not found" in result.stderr.lower()
-    if window_missing and strict_window:
-        entries = []
 
-    response: dict[str, Any] = {
-        "ok": result.returncode == 0 and not (window_missing and strict_window),
-        "window": window,
-        "caption_provider": caption_provider,
-        "entries": entries,
-    }
-
-    if not entries:
-        response["message"] = "No gaze caption entries were produced."
-    if window_missing and strict_window:
-        response["error"] = f"window not found: {window!r}"
-        response["hint"] = "Launch Disco Elysium first. Fullscreen fallback was suppressed."
-    elif result.returncode != 0:
-        response["error"] = tail_text(result.stderr or result.stdout)
-    elif result.stderr.strip():
-        response["warnings"] = tail_text(result.stderr)
-
-    return response
+def activate_macos_app(bundle_id: str) -> None:
+    subprocess.run(
+        ["osascript", "-e", f'tell application id "{bundle_id}" to activate'],
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+        check=False,
+    )
+    time.sleep(0.1)
 
 
 def macos_window_visible(needle: str) -> bool | None:

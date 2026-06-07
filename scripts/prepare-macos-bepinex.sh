@@ -7,7 +7,9 @@ APP_ROOT="$GAME_ROOT/$APP_NAME"
 MACOS_DIR="$APP_ROOT/Contents/MacOS"
 RESOURCES_DATA="../Resources/Data"
 FRAMEWORKS_GAME_ASSEMBLY="../Frameworks/GameAssembly.dylib"
+ROOT_GAME_ASSEMBLY="disco.app/Contents/Frameworks/GameAssembly.dylib"
 BEPINEX_CFG="$GAME_ROOT/BepInEx/config/BepInEx.cfg"
+BEPINEX_CORE="$GAME_ROOT/BepInEx/core"
 
 echo "Game root: $GAME_ROOT"
 echo "App:       $APP_ROOT"
@@ -51,6 +53,14 @@ ensure_symlink() {
 ensure_symlink "$MACOS_DIR/Disco Elysium_Data" "$RESOURCES_DATA"
 ensure_symlink "$MACOS_DIR/GameAssembly.so" "$FRAMEWORKS_GAME_ASSEMBLY"
 ensure_symlink "$MACOS_DIR/libil2cpp.so" "$FRAMEWORKS_GAME_ASSEMBLY"
+ensure_symlink "$GAME_ROOT/libil2cpp.so" "$ROOT_GAME_ASSEMBLY"
+
+if [[ -d "$BEPINEX_CORE" ]]; then
+  ensure_symlink "$BEPINEX_CORE/GameAssembly.dylib" "../../$ROOT_GAME_ASSEMBLY"
+  ensure_symlink "$BEPINEX_CORE/libGameAssembly.dylib" "../../$ROOT_GAME_ASSEMBLY"
+else
+  echo "BepInEx core directory not found yet. Install BepInEx first, then rerun this script."
+fi
 
 if [[ -f "$BEPINEX_CFG" ]]; then
   if grep -q '^ScanMethodRefs = true$' "$BEPINEX_CFG"; then

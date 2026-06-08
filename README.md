@@ -265,6 +265,10 @@ coordinates are pixels in the returned game screenshot unless you explicitly set
 `target=screen` for raw macOS screen coordinates. If you capture a screenshot
 with another `scale`, pass the same `scale` to `disco_click`; pass `scale=1.0`
 only when clicking native game-window pixels.
+The macOS bridge records the last cropped game screenshot for 60 seconds and
+uses that `cropPixelBox` for `target=game` clicks. This keeps clicks aligned with
+the exact image the model just saw, even if macOS reports a slightly shifted
+fullscreen window between screenshot and click calls.
 `disco_key` accepts both `name="tab"` and `key="tab"` for compatibility with
 different MCP clients.
 

@@ -26,9 +26,11 @@ except Exception:  # pragma: no cover - depends on local venv.
     Image = None  # type: ignore
 
 
-VERSION = "0.3.3"
+VERSION = "0.3.5"
 APP_BUNDLE_ID = os.environ.get("DISCO_APP_BUNDLE_ID", "com.zaumstudio.discoelysium")
 DEFAULT_GAME_SCALE = 0.4
+LAST_GAME_CAPTURE_TTL_SECONDS = 60.0
+LAST_GAME_CAPTURE: dict[str, Any] | None = None
 
 try:
     import Quartz  # type: ignore
@@ -171,6 +173,8 @@ def post_click(x: int, y: int, double: bool = False) -> dict[str, Any]:
 
 
 def capture_screenshot(params: dict[str, list[str]]) -> dict[str, Any]:
+    global LAST_GAME_CAPTURE
+
     scale = clamp_float(one(params, "scale", str(DEFAULT_GAME_SCALE)), 0.05, 1.0)
     quality = clamp_int(one(params, "quality", "35"), 10, 95)
     max_bytes = clamp_int(one(params, "max_bytes", "750000"), 20_000, 5_000_000)
@@ -197,9 +201,11 @@ def capture_screenshot(params: dict[str, list[str]]) -> dict[str, Any]:
         source_width, source_height = image.size
         bbox = game_window["pixelBox"] if game_window else None
         cropped = False
+        crop_box = None
         if bbox:
             left, top, right, bottom = clip_box(bbox, source_width, source_height)
             if right > left and bottom > top:
+                crop_box = (left, top, right, bottom)
                 image = image.crop((left, top, right, bottom))
                 cropped = True
 
@@ -212,6 +218,20 @@ def capture_screenshot(params: dict[str, list[str]]) -> dict[str, Any]:
 
         data, used_quality = encode_jpeg_under_limit(image, quality, max_bytes)
         width, height = image.size
+        if cropped and game_window and crop_box:
+            LAST_GAME_CAPTURE = {
+                "capturedAt": time.monotonic(),
+                "scale": scale,
+                "cropPixelBox": crop_box,
+                "displayScale": float(game_window["displayScale"]),
+                "sourceWidth": source_width,
+                "sourceHeight": source_height,
+                "width": width,
+                "height": height,
+                "gameWindow": game_window,
+            }
+        elif target not in {"screen", "fullscreen", "desktop"}:
+            LAST_GAME_CAPTURE = None
         return {
             "screenshot": True,
             "format": "jpeg",
@@ -222,6 +242,7 @@ def capture_screenshot(params: dict[str, list[str]]) -> dict[str, Any]:
             "quality": used_quality,
             "target": "game" if cropped else "screen",
             "cropped": cropped,
+            "cropPixelBox": crop_box,
             "gameWindow": game_window if cropped else None,
             "sourceWidth": source_width,
             "sourceHeight": source_height,
@@ -421,18 +442,23 @@ def map_click_coordinates(x: int, y: int, params: dict[str, list[str]]) -> tuple
     scale = clamp_float(one(params, "scale", str(DEFAULT_GAME_SCALE)), 0.05, 1.0)
     if target in {"game", "window"}:
         activate_game()
-        game_window = find_game_window(retries=5, delay=0.18)
-        if not game_window:
+        last_capture = recent_game_capture()
+        game_window = last_capture.get("gameWindow") if last_capture else find_game_window(retries=5, delay=0.18)
+        if not game_window and not last_capture:
             raise RuntimeError("Disco Elysium window not found; launch the game or use target=screen absolute coordinates.")
-        point_box = game_window["pointBox"]
-        display_scale = float(game_window["displayScale"])
-        mapped_x = int(round(float(point_box["x"]) + (x / (display_scale * scale))))
-        mapped_y = int(round(float(point_box["y"]) + (y / (display_scale * scale))))
+        display_scale = float(last_capture["displayScale"] if last_capture else game_window["displayScale"])
+        crop_box = last_capture["cropPixelBox"] if last_capture else game_window.get("visiblePixelBox") or game_window["pixelBox"]
+        crop_left, crop_top = float(crop_box[0]), float(crop_box[1])
+        mapped_x = int(round((crop_left + (x / scale)) / display_scale))
+        mapped_y = int(round((crop_top + (y / scale)) / display_scale))
         return mapped_x, mapped_y, {
             "coordinateSpace": "game",
             "inputX": x,
             "inputY": y,
             "inputScale": scale,
+            "cropPixelBox": crop_box,
+            "mappingSource": "last-game-screenshot" if last_capture else "current-window",
+            "lastCaptureAge": round(time.monotonic() - last_capture["capturedAt"], 3) if last_capture else None,
             "gameWindow": game_window,
         }
 
@@ -461,6 +487,14 @@ def mac_screen_scale() -> float:
     except Exception:
         pass
     return 1.0
+
+
+def recent_game_capture() -> dict[str, Any] | None:
+    if not LAST_GAME_CAPTURE:
+        return None
+    if time.monotonic() - float(LAST_GAME_CAPTURE["capturedAt"]) > LAST_GAME_CAPTURE_TTL_SECONDS:
+        return None
+    return LAST_GAME_CAPTURE
 
 
 def clip_box(box: tuple[int, int, int, int], width: int, height: int) -> tuple[int, int, int, int]:

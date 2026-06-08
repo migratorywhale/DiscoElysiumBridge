@@ -13,19 +13,19 @@ The mod runs an HTTP server on `localhost:7860` with these endpoints:
 | Endpoint | Description | Example |
 |----------|-------------|---------|
 | `/click?x=500&y=300` | Click at screen position | Walk to a location |
-| `/click?x=120&y=80&target=game&scale=0.25` | Click a point from the scaled game screenshot | Align hand to eye |
+| `/click?x=120&y=80&target=game&scale=0.4` | Click a point from the scaled game screenshot | Align hand to eye |
 | `/click?x=500&y=300&double=1` | Double-click | Run to a location |
 | `/choose?index=2` | Select dialogue option (0-9) | Pick a dialogue choice |
 | `/continue` | Press Enter | Advance dialogue |
 | `/key?name=tab&hold=2000` | Press/hold a key | Hold Tab to see highlights |
 | `/screenshot` | Capture screen as base64 | See the game |
-| `/screenshot?scale=0.25&format=jpeg&quality=35&target=game` | Cropped/compressed JPEG screenshot | Smaller, saves tokens |
+| `/screenshot?scale=0.4&format=jpeg&quality=35&target=game` | Cropped/compressed JPEG screenshot | Smaller, saves tokens |
 | `/state` | Get dialogue state | Check available choices |
 | `/health` | Health check | Verify mod is running |
 
 ### Screenshot Options
 
-- `scale` (0.05-1.0): Downscale factor. MCP defaults to 0.25.
+- `scale` (0.05-1.0): Downscale factor. MCP defaults to 0.4.
 - `format` (bmp/jpeg): Image format. Default bmp. JPEG is much smaller (~60KB vs ~4MB)
 - `quality` (10-95): macOS JPEG quality for the external bridge. MCP defaults to 35.
 - `target` (`game`/`screen`): macOS external bridge tries to crop to the Disco Elysium window when `game`.
@@ -180,7 +180,7 @@ API directly or through the wrapper tools in this repo.
 ```bash
 python tools/disco_client.py health
 python tools/disco_client.py state
-python tools/disco_client.py screenshot --scale 0.25 --quality 35 --target game --out /tmp/disco.jpg
+python tools/disco_client.py screenshot --scale 0.4 --quality 35 --target game --out /tmp/disco.jpg
 python tools/disco_client.py gaze --window "Disco Elysium" --caption-provider gemini
 python tools/disco_client.py gaze --window "Disco Elysium" --caption-provider gemini --max-ocr-chars 2000
 python tools/disco_client.py gaze --window "Disco Elysium" --caption-provider glm
@@ -190,8 +190,8 @@ python tools/disco_client.py choose 0
 python tools/disco_client.py continue
 python tools/disco_client.py key tab --hold 2000
 python tools/disco_client.py click 500 300 --double
-python tools/disco_client.py click 120 80 --target game --scale 0.25
-python tools/disco_client.py click 120 80 --target game --scale 0.25 --dry-run
+python tools/disco_client.py click 120 80 --target game --scale 0.4
+python tools/disco_client.py click 120 80 --target game --scale 0.4 --dry-run
 ```
 
 Set `DISCO_BRIDGE_URL` if the bridge is exposed from another machine:
@@ -260,9 +260,11 @@ instead of taking a larger screenshot.
 MCP output small; pass `include_meta=true` only when debugging capture state.
 
 When using the MCP wrapper, `disco_click` defaults to `target=game` and
-`scale=0.25`, matching the default `disco_screenshot`. In other words, click
+`scale=0.4`, matching the default `disco_screenshot`. In other words, click
 coordinates are pixels in the returned game screenshot unless you explicitly set
-`target=screen` for raw macOS screen coordinates.
+`target=screen` for raw macOS screen coordinates. If you capture a screenshot
+with another `scale`, pass the same `scale` to `disco_click`; pass `scale=1.0`
+only when clicking native game-window pixels.
 `disco_key` accepts both `name="tab"` and `key="tab"` for compatibility with
 different MCP clients.
 

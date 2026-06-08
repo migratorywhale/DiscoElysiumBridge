@@ -16,6 +16,7 @@ from mcp.server.fastmcp import FastMCP, Image
 
 
 BRIDGE_URL = os.environ.get("DISCO_BRIDGE_URL", "http://localhost:7860")
+DEFAULT_GAME_SCALE = 0.4
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "tools"))
 
@@ -90,10 +91,10 @@ def disco_click(
     y: int,
     double: bool = False,
     target: str = "game",
-    scale: float = 0.25,
+    scale: float = DEFAULT_GAME_SCALE,
     dry_run: bool = False,
 ) -> str:
-    """Click a coordinate. By default x/y are pixels in the default game screenshot (target=game, scale=0.25)."""
+    """Click a coordinate. By default x/y are pixels in the default game screenshot (target=game, scale=0.4). Pass the same scale as the screenshot you used, or scale=1.0 for native game-window pixels."""
     return compact(
         request_json(
             "/click",
@@ -123,7 +124,7 @@ def disco_key(name: str | None = None, key: str | None = None, hold: int = 0) ->
 
 @mcp.tool()
 def disco_screenshot(
-    scale: float = 0.25,
+    scale: float = DEFAULT_GAME_SCALE,
     quality: int = 35,
     target: str = "game",
     max_bytes: int = 750000,

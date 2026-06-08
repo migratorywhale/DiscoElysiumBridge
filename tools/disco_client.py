@@ -17,6 +17,7 @@ from gaze_runner import run_gaze_once
 
 
 DEFAULT_URL = os.environ.get("DISCO_BRIDGE_URL", "http://localhost:7860")
+DEFAULT_GAME_SCALE = 0.4
 
 
 def request_json(base_url: str, path: str, params: dict[str, Any] | None = None) -> dict[str, Any]:
@@ -54,7 +55,7 @@ def build_parser() -> argparse.ArgumentParser:
         default="screen",
         help="Coordinate space. screen=absolute macOS points; game=scaled game screenshot pixels.",
     )
-    click.add_argument("--scale", type=float, default=1.0, help="Screenshot scale when target is game or *-image.")
+    click.add_argument("--scale", type=float, default=DEFAULT_GAME_SCALE, help="Screenshot scale when target is game or *-image.")
     click.add_argument("--dry-run", action="store_true", help="Return mapped coordinates without clicking.")
 
     key = sub.add_parser("key")
@@ -62,7 +63,7 @@ def build_parser() -> argparse.ArgumentParser:
     key.add_argument("--hold", type=int, default=0, help="Hold duration in ms")
 
     screenshot = sub.add_parser("screenshot")
-    screenshot.add_argument("--scale", type=float, default=0.25)
+    screenshot.add_argument("--scale", type=float, default=DEFAULT_GAME_SCALE)
     screenshot.add_argument("--format", choices=["jpeg", "bmp"], default="jpeg")
     screenshot.add_argument("--quality", type=int, default=35)
     screenshot.add_argument("--target", choices=["game", "screen", "fullscreen", "desktop"], default="game")

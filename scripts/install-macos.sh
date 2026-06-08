@@ -51,7 +51,7 @@ cp -f "$DLL" "$PLUGINS_DIR/DiscoElysiumBridge.dll"
 echo "Installed: $PLUGINS_DIR/DiscoElysiumBridge.dll"
 echo "Start the game through BepInEx, then test:"
 echo "  curl --noproxy localhost http://localhost:7860/health"
-echo "  python tools/disco_client.py screenshot --scale 0.25 --quality 35 --target game --out /tmp/disco.jpg"
+echo "  python tools/disco_client.py screenshot --scale 0.4 --quality 35 --target game --out /tmp/disco.jpg"
 echo
 echo "macOS status: internal plugin supports /health, /state, input endpoints, and whole-screen screenshots."
 echo "Use disco_gaze for lower-token window-focused observation."

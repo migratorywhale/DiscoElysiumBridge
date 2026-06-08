@@ -26,8 +26,9 @@ except Exception:  # pragma: no cover - depends on local venv.
     Image = None  # type: ignore
 
 
-VERSION = "0.3.2"
+VERSION = "0.3.3"
 APP_BUNDLE_ID = os.environ.get("DISCO_APP_BUNDLE_ID", "com.zaumstudio.discoelysium")
+DEFAULT_GAME_SCALE = 0.4
 
 try:
     import Quartz  # type: ignore
@@ -170,7 +171,7 @@ def post_click(x: int, y: int, double: bool = False) -> dict[str, Any]:
 
 
 def capture_screenshot(params: dict[str, list[str]]) -> dict[str, Any]:
-    scale = clamp_float(one(params, "scale", "0.25"), 0.05, 1.0)
+    scale = clamp_float(one(params, "scale", str(DEFAULT_GAME_SCALE)), 0.05, 1.0)
     quality = clamp_int(one(params, "quality", "35"), 10, 95)
     max_bytes = clamp_int(one(params, "max_bytes", "750000"), 20_000, 5_000_000)
     target = one(params, "target", "game").lower()
@@ -417,7 +418,7 @@ def intersect_box(a: tuple[int, int, int, int], b: tuple[int, int, int, int]) ->
 
 def map_click_coordinates(x: int, y: int, params: dict[str, list[str]]) -> tuple[int, int, dict[str, Any]]:
     target = one(params, "target", "screen").lower()
-    scale = clamp_float(one(params, "scale", "1.0"), 0.05, 1.0)
+    scale = clamp_float(one(params, "scale", str(DEFAULT_GAME_SCALE)), 0.05, 1.0)
     if target in {"game", "window"}:
         activate_game()
         game_window = find_game_window(retries=5, delay=0.18)

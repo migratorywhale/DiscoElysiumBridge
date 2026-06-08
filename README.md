@@ -20,6 +20,7 @@ The mod runs an HTTP server on `localhost:7860` with these endpoints:
 | `/key?name=tab&hold=2000` | Press/hold a key | Hold Tab to see highlights |
 | `/screenshot` | Capture screen as base64 | See the game |
 | `/screenshot?scale=0.4&format=jpeg&quality=35&target=game` | Cropped/compressed JPEG screenshot | Smaller, saves tokens |
+| `/markers?scale=0.4&target=game` | Detect green interaction markers in the game screenshot | Get click coordinates |
 | `/state` | Get dialogue state | Check available choices |
 | `/health` | Health check | Verify mod is running |
 
@@ -207,6 +208,7 @@ export DISCO_BRIDGE_URL="http://windows-host.local:7860"
 - `disco_health`
 - `disco_state`
 - `disco_screenshot`
+- `disco_markers`
 - `disco_gaze`
 - `disco_choose`
 - `disco_continue`
@@ -269,6 +271,9 @@ The macOS bridge records the last cropped game screenshot for 60 seconds and
 uses that `cropPixelBox` for `target=game` clicks. This keeps clicks aligned with
 the exact image the model just saw, even if macOS reports a slightly shifted
 fullscreen window between screenshot and click calls.
+If visual coordinate picking is ambiguous, call `disco_markers`; it returns
+green interaction-marker coordinates in screenshot space, and each `marker.click`
+object can be passed directly to `disco_click`.
 `disco_key` accepts both `name="tab"` and `key="tab"` for compatibility with
 different MCP clients.
 

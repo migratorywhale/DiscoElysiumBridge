@@ -16,6 +16,7 @@ import subprocess
 import tempfile
 import time
 import urllib.parse
+from io import BytesIO
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any
@@ -26,7 +27,7 @@ except Exception:  # pragma: no cover - depends on local venv.
     Image = None  # type: ignore
 
 
-VERSION = "0.3.5"
+VERSION = "0.3.6"
 APP_BUNDLE_ID = os.environ.get("DISCO_APP_BUNDLE_ID", "com.zaumstudio.discoelysium")
 DEFAULT_GAME_SCALE = 0.4
 LAST_GAME_CAPTURE_TTL_SECONDS = 60.0
@@ -251,6 +252,131 @@ def capture_screenshot(params: dict[str, list[str]]) -> dict[str, Any]:
         }
     finally:
         path.unlink(missing_ok=True)
+
+
+def detect_markers(params: dict[str, list[str]]) -> dict[str, Any]:
+    if Image is None:
+        return {"error": "Pillow is not available; cannot detect markers."}
+
+    data = capture_screenshot(params)
+    image_b64 = data.get("data")
+    if not image_b64:
+        return {"error": "screenshot capture failed", "capture": data}
+
+    image = Image.open(BytesIO(base64.b64decode(image_b64))).convert("RGB")
+    markers = detect_green_markers(image)
+    scale = float(data.get("scale") or DEFAULT_GAME_SCALE)
+    crop_box = data.get("cropPixelBox")
+    game_window = data.get("gameWindow")
+    display_scale = float(game_window.get("displayScale", mac_screen_scale())) if isinstance(game_window, dict) else mac_screen_scale()
+    crop_left = float(crop_box[0]) if isinstance(crop_box, list) and len(crop_box) >= 2 else 0.0
+    crop_top = float(crop_box[1]) if isinstance(crop_box, list) and len(crop_box) >= 2 else 0.0
+
+    for marker in markers:
+        marker["click"] = {"x": marker["x"], "y": marker["y"], "target": "game", "scale": scale}
+        marker["screenPoint"] = {
+            "x": int(round((crop_left + (marker["x"] / scale)) / display_scale)),
+            "y": int(round((crop_top + (marker["y"] / scale)) / display_scale)),
+        }
+
+    meta = {key: value for key, value in data.items() if key != "data"}
+    return {"markers": markers, "count": len(markers), "screenshot": meta}
+
+
+def detect_green_markers(image: Any) -> list[dict[str, Any]]:
+    width, height = image.size
+    points: list[tuple[int, int]] = []
+    for y in range(height):
+        for x in range(width):
+            r, g, b = image.getpixel((x, y))
+            if g > 140 and b > 100 and r < 135 and g > r + 35:
+                points.append((x, y))
+
+    raw_components = connected_components(points)
+    merged = merge_nearby_components(raw_components)
+    markers: list[dict[str, Any]] = []
+    for index, comp in enumerate(sorted(merged, key=lambda item: (item["y"], item["x"])), 1):
+        markers.append(
+            {
+                "id": index,
+                "x": comp["x"],
+                "y": comp["y"],
+                "box": comp["box"],
+                "pixels": comp["pixels"],
+            }
+        )
+    return markers
+
+
+def connected_components(points: list[tuple[int, int]]) -> list[dict[str, Any]]:
+    point_set = set(points)
+    seen: set[tuple[int, int]] = set()
+    components: list[dict[str, Any]] = []
+    for point in points:
+        if point in seen:
+            continue
+        stack = [point]
+        seen.add(point)
+        xs: list[int] = []
+        ys: list[int] = []
+        while stack:
+            cx, cy = stack.pop()
+            xs.append(cx)
+            ys.append(cy)
+            for nx in range(cx - 2, cx + 3):
+                for ny in range(cy - 2, cy + 3):
+                    neighbor = (nx, ny)
+                    if neighbor in point_set and neighbor not in seen:
+                        seen.add(neighbor)
+                        stack.append(neighbor)
+        if len(xs) >= 10:
+            components.append(component_from_points(xs, ys))
+    return components
+
+
+def merge_nearby_components(components: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    pending = components[:]
+    merged: list[dict[str, Any]] = []
+    while pending:
+        current = pending.pop(0)
+        changed = True
+        while changed:
+            changed = False
+            rest: list[dict[str, Any]] = []
+            for candidate in pending:
+                dx = current["x"] - candidate["x"]
+                dy = current["y"] - candidate["y"]
+                if (dx * dx + dy * dy) ** 0.5 <= 18:
+                    current = merge_components(current, candidate)
+                    changed = True
+                else:
+                    rest.append(candidate)
+            pending = rest
+        merged.append(current)
+    return merged
+
+
+def merge_components(a: dict[str, Any], b: dict[str, Any]) -> dict[str, Any]:
+    left = min(a["box"][0], b["box"][0])
+    top = min(a["box"][1], b["box"][1])
+    right = max(a["box"][2], b["box"][2])
+    bottom = max(a["box"][3], b["box"][3])
+    pixels = int(a["pixels"]) + int(b["pixels"])
+    return {
+        "x": int(round(((a["x"] * int(a["pixels"])) + (b["x"] * int(b["pixels"]))) / pixels)),
+        "y": int(round(((a["y"] * int(a["pixels"])) + (b["y"] * int(b["pixels"]))) / pixels)),
+        "box": [left, top, right, bottom],
+        "pixels": pixels,
+    }
+
+
+def component_from_points(xs: list[int], ys: list[int]) -> dict[str, Any]:
+    return {
+        "x": int(round(sum(xs) / len(xs))),
+        "y": int(round(sum(ys) / len(ys))),
+        "box": [min(xs), min(ys), max(xs), max(ys)],
+        "pixels": len(xs),
+    }
 
 
 def find_game_window(retries: int = 3, delay: float = 0.12, *, allow_frontmost_screen: bool = True) -> dict[str, Any] | None:
@@ -607,9 +733,11 @@ class Handler(BaseHTTPRequestHandler):
             return post_key(name, hold)
         if path == "/screenshot":
             return capture_screenshot(params)
+        if path == "/markers":
+            return detect_markers(params)
         return {
             "error": "unknown endpoint",
-            "endpoints": ["/health", "/state", "/choose", "/continue", "/click", "/key", "/screenshot"],
+            "endpoints": ["/health", "/state", "/choose", "/continue", "/click", "/key", "/screenshot", "/markers"],
         }
 
     def respond(self, payload: dict[str, Any]) -> None:

@@ -164,6 +164,18 @@ def disco_screenshot(
 
 
 @mcp.tool()
+def disco_markers(
+    scale: float = DEFAULT_GAME_SCALE,
+    target: str = "game",
+    max_bytes: int = 750000,
+) -> str:
+    """Capture the current game screenshot and return detected green interaction-marker coordinates. Use marker.click with disco_click."""
+    scale = max(0.05, min(float(scale), 1.0))
+    max_bytes = max(20_000, min(int(max_bytes), 5_000_000))
+    return compact(request_json("/markers", {"scale": scale, "target": target, "max_bytes": max_bytes}))
+
+
+@mcp.tool()
 def disco_gaze(
     window: str = "Disco Elysium",
     caption_provider: str = "gemini",

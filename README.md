@@ -14,6 +14,7 @@ The mod runs an HTTP server on `localhost:7860` with these endpoints:
 |----------|-------------|---------|
 | `/click?x=500&y=300` | Click at screen position | Walk to a location |
 | `/click?x=120&y=80&target=game&scale=0.4` | Click a point from the scaled game screenshot | Align hand to eye |
+| `/click-watch?x=120&y=80&target=game&scale=0.4` | Click, then capture a short screenshot burst | Catch fast captions |
 | `/click?x=500&y=300&double=1` | Double-click | Run to a location |
 | `/choose?index=2` | Select dialogue option (0-9) | Pick a dialogue choice |
 | `/continue` | Press Enter | Advance dialogue |
@@ -213,6 +214,7 @@ export DISCO_BRIDGE_URL="http://windows-host.local:7860"
 - `disco_choose`
 - `disco_continue`
 - `disco_click`
+- `disco_click_watch`
 - `disco_key`
 
 Run locally with:
@@ -274,6 +276,9 @@ fullscreen window between screenshot and click calls.
 If visual coordinate picking is ambiguous, call `disco_markers`; it returns
 green interaction-marker coordinates in screenshot space, and each `marker.click`
 object can be passed directly to `disco_click`.
+If a caption or tooltip disappears before a normal follow-up screenshot can catch
+it, use `disco_click_watch`; it clicks once and immediately returns a short burst
+of screenshots with frame timing metadata.
 `disco_key` accepts both `name="tab"` and `key="tab"` for compatibility with
 different MCP clients.
 

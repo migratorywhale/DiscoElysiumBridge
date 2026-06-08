@@ -111,6 +111,57 @@ def disco_click(
 
 
 @mcp.tool()
+def disco_click_watch(
+    x: int,
+    y: int,
+    double: bool = False,
+    target: str = "game",
+    scale: float = DEFAULT_GAME_SCALE,
+    frames: int = 3,
+    interval_ms: int = 150,
+    watch_scale: float | None = None,
+    quality: int = 35,
+    max_bytes: int = 350000,
+) -> list:
+    """Click a coordinate, then immediately capture a short screenshot burst for fast disappearing captions."""
+    scale = max(0.05, min(float(scale), 1.0))
+    watch_scale = scale if watch_scale is None else max(0.05, min(float(watch_scale), 1.0))
+    frames = max(1, min(int(frames), 5))
+    interval_ms = max(0, min(int(interval_ms), 1000))
+    quality = max(10, min(int(quality), 95))
+    max_bytes = max(20_000, min(int(max_bytes), 5_000_000))
+    data = request_json(
+        "/click-watch",
+        {
+            "x": x,
+            "y": y,
+            "double": 1 if double else 0,
+            "target": target,
+            "scale": scale,
+            "frames": frames,
+            "interval_ms": interval_ms,
+            "watch_scale": watch_scale,
+            "quality": quality,
+            "max_bytes": max_bytes,
+        },
+    )
+    frame_metas: list[dict[str, Any]] = []
+    image_items: list[Any] = []
+    for frame in data.get("frames", []):
+        if not isinstance(frame, dict):
+            continue
+        frame_meta = {key: value for key, value in frame.items() if key != "data"}
+        image_b64 = frame.get("data")
+        if image_b64:
+            image_bytes = base64.b64decode(image_b64)
+            frame_meta["imageBytes"] = len(image_bytes)
+            image_items.append(Image(data=image_bytes, format=frame.get("format", "jpeg")))
+        frame_metas.append(frame_meta)
+
+    return [compact({"click": data.get("click"), "frames": frame_metas})] + image_items
+
+
+@mcp.tool()
 def disco_key(name: str | None = None, key: str | None = None, hold: int = 0) -> str:
     """Press or hold a supported key such as tab, escape, i, m, up, down. Pass either name or key."""
     key_name = name or key

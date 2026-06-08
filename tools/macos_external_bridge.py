@@ -27,7 +27,7 @@ except Exception:  # pragma: no cover - depends on local venv.
     Image = None  # type: ignore
 
 
-VERSION = "0.3.6"
+VERSION = "0.3.9"
 APP_BUNDLE_ID = os.environ.get("DISCO_APP_BUNDLE_ID", "com.zaumstudio.discoelysium")
 DEFAULT_GAME_SCALE = 0.4
 LAST_GAME_CAPTURE_TTL_SECONDS = 60.0
@@ -180,75 +180,122 @@ def capture_screenshot(params: dict[str, list[str]]) -> dict[str, Any]:
     quality = clamp_int(one(params, "quality", "35"), 10, 95)
     max_bytes = clamp_int(one(params, "max_bytes", "750000"), 20_000, 5_000_000)
     target = one(params, "target", "game").lower()
-    activate_game()
-    game_window = find_game_window() if target not in {"screen", "fullscreen", "desktop"} else None
+    reusable_capture = recent_game_capture() if one(params, "reuse_last_capture", "0").lower() in {"1", "true", "yes"} else None
+    if reusable_capture and target not in {"screen", "fullscreen", "desktop"}:
+        game_window = reusable_capture.get("gameWindow")
+        preset_crop_box = reusable_capture.get("cropPixelBox")
+    else:
+        activate_game()
+        game_window = find_game_window() if target not in {"screen", "fullscreen", "desktop"} else None
+        preset_crop_box = None
 
+    if Image is None:
+        return capture_png_with_screencapture()
+
+    image, capture_source, capture_warning = capture_display_image()
+    source_width, source_height = image.size
+    bbox = preset_crop_box or (game_window["pixelBox"] if game_window else None)
+    cropped = False
+    crop_box = None
+    if bbox:
+        left, top, right, bottom = clip_box(bbox, source_width, source_height)
+        if right > left and bottom > top:
+            crop_box = (left, top, right, bottom)
+            image = image.crop((left, top, right, bottom))
+            cropped = True
+
+    if scale < 0.999:
+        width, height = image.size
+        image = image.resize(
+            (max(1, int(width * scale)), max(1, int(height * scale))),
+            Image.Resampling.LANCZOS,
+        )
+
+    data, used_quality = encode_jpeg_under_limit(image, quality, max_bytes)
+    width, height = image.size
+    if cropped and game_window and crop_box:
+        LAST_GAME_CAPTURE = {
+            "capturedAt": time.monotonic(),
+            "scale": scale,
+            "cropPixelBox": crop_box,
+            "displayScale": float(game_window["displayScale"]),
+            "sourceWidth": source_width,
+            "sourceHeight": source_height,
+            "width": width,
+            "height": height,
+            "gameWindow": game_window,
+        }
+    elif target not in {"screen", "fullscreen", "desktop"}:
+        LAST_GAME_CAPTURE = None
+    payload = {
+        "screenshot": True,
+        "format": "jpeg",
+        "width": width,
+        "height": height,
+        "size": len(data),
+        "scale": scale,
+        "quality": used_quality,
+        "target": "game" if cropped else "screen",
+        "cropped": cropped,
+        "cropPixelBox": crop_box,
+        "gameWindow": game_window if cropped else None,
+        "sourceWidth": source_width,
+        "sourceHeight": source_height,
+        "data": base64.b64encode(data).decode("ascii"),
+        "source": capture_source,
+    }
+    if capture_warning:
+        payload["warning"] = capture_warning
+    return payload
+
+
+def capture_display_image() -> tuple[Any, str, str | None]:
+    if Quartz is not None:
+        try:
+            return capture_display_image_with_quartz(), "macos-quartz-display", None
+        except Exception as exc:
+            image = capture_display_image_with_screencapture()
+            return image, "macos-screencapture", f"Quartz capture failed; fell back to screencapture: {exc}"
+    return capture_display_image_with_screencapture(), "macos-screencapture", None
+
+
+def capture_display_image_with_quartz() -> Any:
+    q = require_quartz()
+    cg_image = q.CGDisplayCreateImage(q.CGMainDisplayID())
+    if cg_image is None:
+        raise RuntimeError("CGDisplayCreateImage returned None")
+    width = q.CGImageGetWidth(cg_image)
+    height = q.CGImageGetHeight(cg_image)
+    bytes_per_row = q.CGImageGetBytesPerRow(cg_image)
+    provider = q.CGImageGetDataProvider(cg_image)
+    data = q.CGDataProviderCopyData(provider)
+    image = Image.frombuffer("RGBA", (width, height), bytes(data), "raw", "BGRA", bytes_per_row, 1)
+    return image.convert("RGB")
+
+
+def capture_display_image_with_screencapture() -> Any:
     with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as tmp:
         path = Path(tmp.name)
     try:
         subprocess.run(["screencapture", "-x", "-t", "png", str(path)], check=True, timeout=10)
-        if Image is None:
-            data = path.read_bytes()
-            return {
-                "screenshot": True,
-                "format": "png",
-                "size": len(data),
-                "data": base64.b64encode(data).decode("ascii"),
-                "source": "macos-screencapture",
-                "warning": "Pillow is not available; scale/quality/crop were skipped.",
-            }
+        return Image.open(path).convert("RGB")
+    finally:
+        path.unlink(missing_ok=True)
 
-        image = Image.open(path).convert("RGB")
-        source_width, source_height = image.size
-        bbox = game_window["pixelBox"] if game_window else None
-        cropped = False
-        crop_box = None
-        if bbox:
-            left, top, right, bottom = clip_box(bbox, source_width, source_height)
-            if right > left and bottom > top:
-                crop_box = (left, top, right, bottom)
-                image = image.crop((left, top, right, bottom))
-                cropped = True
 
-        if scale < 0.999:
-            width, height = image.size
-            image = image.resize(
-                (max(1, int(width * scale)), max(1, int(height * scale))),
-                Image.Resampling.LANCZOS,
-            )
-
-        data, used_quality = encode_jpeg_under_limit(image, quality, max_bytes)
-        width, height = image.size
-        if cropped and game_window and crop_box:
-            LAST_GAME_CAPTURE = {
-                "capturedAt": time.monotonic(),
-                "scale": scale,
-                "cropPixelBox": crop_box,
-                "displayScale": float(game_window["displayScale"]),
-                "sourceWidth": source_width,
-                "sourceHeight": source_height,
-                "width": width,
-                "height": height,
-                "gameWindow": game_window,
-            }
-        elif target not in {"screen", "fullscreen", "desktop"}:
-            LAST_GAME_CAPTURE = None
+def capture_png_with_screencapture() -> dict[str, Any]:
+    with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as tmp:
+        path = Path(tmp.name)
+    try:
+        subprocess.run(["screencapture", "-x", "-t", "png", str(path)], check=True, timeout=10)
+        data = path.read_bytes()
         return {
             "screenshot": True,
-            "format": "jpeg",
-            "width": width,
-            "height": height,
+            "format": "png",
             "size": len(data),
-            "scale": scale,
-            "quality": used_quality,
-            "target": "game" if cropped else "screen",
-            "cropped": cropped,
-            "cropPixelBox": crop_box,
-            "gameWindow": game_window if cropped else None,
-            "sourceWidth": source_width,
-            "sourceHeight": source_height,
             "data": base64.b64encode(data).decode("ascii"),
             "source": "macos-screencapture",
+            "warning": "Pillow is not available; scale/quality/crop were skipped.",
         }
     finally:
         path.unlink(missing_ok=True)
@@ -269,8 +316,8 @@ def detect_markers(params: dict[str, list[str]]) -> dict[str, Any]:
     crop_box = data.get("cropPixelBox")
     game_window = data.get("gameWindow")
     display_scale = float(game_window.get("displayScale", mac_screen_scale())) if isinstance(game_window, dict) else mac_screen_scale()
-    crop_left = float(crop_box[0]) if isinstance(crop_box, list) and len(crop_box) >= 2 else 0.0
-    crop_top = float(crop_box[1]) if isinstance(crop_box, list) and len(crop_box) >= 2 else 0.0
+    crop_left = float(crop_box[0]) if isinstance(crop_box, (list, tuple)) and len(crop_box) >= 2 else 0.0
+    crop_top = float(crop_box[1]) if isinstance(crop_box, (list, tuple)) and len(crop_box) >= 2 else 0.0
 
     for marker in markers:
         marker["click"] = {"x": marker["x"], "y": marker["y"], "target": "game", "scale": scale}
@@ -281,6 +328,49 @@ def detect_markers(params: dict[str, list[str]]) -> dict[str, Any]:
 
     meta = {key: value for key, value in data.items() if key != "data"}
     return {"markers": markers, "count": len(markers), "screenshot": meta}
+
+
+def click_watch(params: dict[str, list[str]]) -> dict[str, Any]:
+    click_result = perform_click(params)
+    remember_click_mapping_as_capture(click_result)
+    frame_count = clamp_int(one(params, "frames", "3"), 1, 5)
+    interval_ms = clamp_int(one(params, "interval_ms", "150"), 0, 1000)
+    frame_params = {
+        "target": [one(params, "target", "game")],
+        "scale": [one(params, "watch_scale", one(params, "scale", str(DEFAULT_GAME_SCALE)))],
+        "quality": [one(params, "quality", "35")],
+        "max_bytes": [one(params, "max_bytes", "350000")],
+        "reuse_last_capture": ["1"],
+    }
+    frames: list[dict[str, Any]] = []
+    started = time.monotonic()
+    for index in range(frame_count):
+        if index > 0 and interval_ms > 0:
+            time.sleep(interval_ms / 1000)
+        frame = capture_screenshot(frame_params)
+        frame["frame"] = index
+        frame["afterClickMs"] = int(round((time.monotonic() - started) * 1000))
+        frames.append(frame)
+    return {"click": click_result, "frames": frames}
+
+
+def remember_click_mapping_as_capture(click_result: dict[str, Any]) -> None:
+    global LAST_GAME_CAPTURE
+
+    mapping = click_result.get("mapping")
+    if not isinstance(mapping, dict):
+        return
+    crop_box = mapping.get("cropPixelBox")
+    game_window = mapping.get("gameWindow")
+    if not crop_box or not isinstance(game_window, dict):
+        return
+    LAST_GAME_CAPTURE = {
+        "capturedAt": time.monotonic(),
+        "scale": float(mapping.get("inputScale") or DEFAULT_GAME_SCALE),
+        "cropPixelBox": crop_box,
+        "displayScale": float(game_window.get("displayScale", mac_screen_scale())),
+        "gameWindow": game_window,
+    }
 
 
 def detect_green_markers(image: Any) -> list[dict[str, Any]]:
@@ -668,6 +758,25 @@ def choose_index(index: int) -> dict[str, Any]:
     return result
 
 
+def perform_click(params: dict[str, list[str]]) -> dict[str, Any]:
+    x = int(one(params, "x"))
+    y = int(one(params, "y"))
+    double = one(params, "double", "0").lower() in {"1", "true", "yes"}
+    mapped_x, mapped_y, mapping = map_click_coordinates(x, y, params)
+    if one(params, "dry_run", "0").lower() in {"1", "true", "yes"}:
+        return {
+            "clicked": False,
+            "dryRun": True,
+            "x": mapped_x,
+            "y": mapped_y,
+            "double": double,
+            "mapping": mapping,
+        }
+    result = post_click(mapped_x, mapped_y, double)
+    result["mapping"] = mapping
+    return result
+
+
 def external_state() -> dict[str, Any]:
     return {
         "conversationActive": False,
@@ -711,22 +820,9 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/choose":
             return choose_index(int(one(params, "index", "0")))
         if path == "/click":
-            x = int(one(params, "x"))
-            y = int(one(params, "y"))
-            double = one(params, "double", "0").lower() in {"1", "true", "yes"}
-            mapped_x, mapped_y, mapping = map_click_coordinates(x, y, params)
-            if one(params, "dry_run", "0").lower() in {"1", "true", "yes"}:
-                return {
-                    "clicked": False,
-                    "dryRun": True,
-                    "x": mapped_x,
-                    "y": mapped_y,
-                    "double": double,
-                    "mapping": mapping,
-                }
-            result = post_click(mapped_x, mapped_y, double)
-            result["mapping"] = mapping
-            return result
+            return perform_click(params)
+        if path == "/click-watch":
+            return click_watch(params)
         if path == "/key":
             name = one(params, "name")
             hold = int(one(params, "hold", "0"))
@@ -737,7 +833,7 @@ class Handler(BaseHTTPRequestHandler):
             return detect_markers(params)
         return {
             "error": "unknown endpoint",
-            "endpoints": ["/health", "/state", "/choose", "/continue", "/click", "/key", "/screenshot", "/markers"],
+            "endpoints": ["/health", "/state", "/choose", "/continue", "/click", "/click-watch", "/key", "/screenshot", "/markers"],
         }
 
     def respond(self, payload: dict[str, Any]) -> None:

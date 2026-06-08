@@ -128,7 +128,7 @@ events:
 ```bash
 scripts/start-macos-external.sh
 python tools/disco_client.py health
-python tools/disco_client.py gaze --window "Disco Elysium" --caption-provider gemini
+python tools/disco_client.py gaze --window "Disco Elysium"
 python tools/disco_client.py key tab --hold 2000
 python tools/disco_client.py click 500 300 --double
 ```
@@ -183,8 +183,9 @@ API directly or through the wrapper tools in this repo.
 python tools/disco_client.py health
 python tools/disco_client.py state
 python tools/disco_client.py screenshot --scale 0.4 --quality 35 --target game --out /tmp/disco.jpg
-python tools/disco_client.py gaze --window "Disco Elysium" --caption-provider gemini
-python tools/disco_client.py gaze --window "Disco Elysium" --caption-provider gemini --max-ocr-chars 2000
+python tools/disco_client.py gaze --window "Disco Elysium"
+python tools/disco_client.py gaze --window "Disco Elysium" --max-ocr-chars 2000
+python tools/disco_client.py gaze --window "Disco Elysium" --caption-provider gemini --no-ocr
 python tools/disco_client.py gaze --window "Disco Elysium" --caption-provider glm
 python tools/disco_client.py gaze --window "Disco Elysium" --caption-provider mock
 python tools/disco_client.py gaze --window "Disco Elysium" --caption-provider none
@@ -253,13 +254,16 @@ Defaults:
 
 - `GAZE_TOOL_DIR=~/Projects/gaze`
 - `DISCO_GAZE_WINDOW="Disco Elysium"`
-- `DISCO_GAZE_PROVIDER=gemini`
+- `DISCO_GAZE_PROVIDER=none`
 - `DISCO_GAZE_MASK=mac-safe`
 - `DISCO_GAZE_MAX_OCR_CHARS=1200`
 
 Use `disco_screenshot` only when the model needs actual pixels.
 For text-heavy dialogue screens, call `disco_gaze(max_ocr_chars=2000)` or higher
 instead of taking a larger screenshot.
+`disco_gaze` defaults to OCR-only because Disco Elysium's dialogue text is the
+important signal and short vision captions can add noisy, incomplete summaries.
+Pass `caption_provider="gemini"` only when you need a visual scene description.
 `disco_gaze` strips repeated timestamp/window/app metadata by default to keep
 MCP output small; pass `include_meta=true` only when debugging capture state.
 

@@ -37,7 +37,7 @@ def gaze_python(gaze_dir: Path) -> str:
 def run_gaze_once(
     *,
     window: str = "Disco Elysium",
-    caption_provider: str = "gemini",
+    caption_provider: str = "none",
     ocr: bool = True,
     mask_preset: str = "mac-safe",
     max_ocr_chars: int = 1200,

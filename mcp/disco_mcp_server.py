@@ -229,14 +229,14 @@ def disco_markers(
 @mcp.tool()
 def disco_gaze(
     window: str = "Disco Elysium",
-    caption_provider: str = "gemini",
+    caption_provider: str = "none",
     ocr: bool = True,
     mask_preset: str = "mac-safe",
     max_ocr_chars: int = 1200,
     include_meta: bool = False,
     allow_fullscreen_fallback: bool = False,
 ) -> str:
-    """Observe the Disco Elysium window through the local gaze tool and return compact text. Increase max_ocr_chars for dense dialogue screens."""
+    """Observe the Disco Elysium window through the local gaze tool and return compact OCR text by default. Set caption_provider='gemini' only when visual scene description is useful."""
     return compact_gaze(
         run_gaze_once(
             window=window,

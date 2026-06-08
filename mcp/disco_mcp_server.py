@@ -110,9 +110,12 @@ def disco_click(
 
 
 @mcp.tool()
-def disco_key(name: str, hold: int = 0) -> str:
-    """Press or hold a supported key such as tab, escape, i, m, up, down."""
-    params: dict[str, Any] = {"name": name}
+def disco_key(name: str | None = None, key: str | None = None, hold: int = 0) -> str:
+    """Press or hold a supported key such as tab, escape, i, m, up, down. Pass either name or key."""
+    key_name = name or key
+    if not key_name:
+        return compact({"error": "missing key name", "hint": "Pass name='tab' or key='tab'."})
+    params: dict[str, Any] = {"name": key_name}
     if hold:
         params["hold"] = hold
     return compact(request_json("/key", params))

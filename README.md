@@ -142,6 +142,8 @@ External bridge status:
 - `/state`: placeholder state; use `disco_gaze` for screen text.
 - `/choose`, `/continue`, `/click`, `/key`: macOS CoreGraphics events.
 - `/screenshot`: macOS `screencapture`, with optional game-window crop, downscale, JPEG quality, and byte cap.
+  If the response says `cropped=false`, the bridge returned a fullscreen image
+  fallback rather than a real game-window crop.
 
 ## Building
 
@@ -261,6 +263,8 @@ When using the MCP wrapper, `disco_click` defaults to `target=game` and
 `scale=0.25`, matching the default `disco_screenshot`. In other words, click
 coordinates are pixels in the returned game screenshot unless you explicitly set
 `target=screen` for raw macOS screen coordinates.
+`disco_key` accepts both `name="tab"` and `key="tab"` for compatibility with
+different MCP clients.
 
 ## Platform Support
 

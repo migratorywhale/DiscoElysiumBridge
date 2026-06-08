@@ -26,7 +26,7 @@ except Exception:  # pragma: no cover - depends on local venv.
     Image = None  # type: ignore
 
 
-VERSION = "0.3.0"
+VERSION = "0.3.2"
 APP_BUNDLE_ID = os.environ.get("DISCO_APP_BUNDLE_ID", "com.zaumstudio.discoelysium")
 
 try:
@@ -231,11 +231,26 @@ def capture_screenshot(params: dict[str, list[str]]) -> dict[str, Any]:
         path.unlink(missing_ok=True)
 
 
-def find_game_window() -> dict[str, Any] | None:
+def find_game_window(retries: int = 3, delay: float = 0.12, *, allow_frontmost_screen: bool = True) -> dict[str, Any] | None:
     if Quartz is None:
         return None
 
+    for attempt in range(max(1, retries)):
+        window = find_game_window_once()
+        if window:
+            return window
+        if attempt < retries - 1:
+            time.sleep(delay)
+
+    if allow_frontmost_screen and is_game_frontmost():
+        return main_screen_game_window()
+
+    return None
+
+
+def find_game_window_once() -> dict[str, Any] | None:
     display_scale = mac_screen_scale()
+    screen_pixel_box = main_screen_pixel_box()
     options = Quartz.kCGWindowListOptionOnScreenOnly | Quartz.kCGWindowListExcludeDesktopElements
     windows = Quartz.CGWindowListCopyWindowInfo(options, Quartz.kCGNullWindowID)
     candidates: list[tuple[int, dict[str, Any]]] = []
@@ -264,6 +279,19 @@ def find_game_window() -> dict[str, Any] | None:
         pixel_y = int(point_y * display_scale)
         pixel_width = int(point_width * display_scale)
         pixel_height = int(point_height * display_scale)
+        visible_box = intersect_box(
+            (pixel_x, pixel_y, pixel_x + pixel_width, pixel_y + pixel_height),
+            screen_pixel_box,
+        )
+        visible_width = max(0, visible_box[2] - visible_box[0])
+        visible_height = max(0, visible_box[3] - visible_box[1])
+        # During fullscreen/Space transitions, CGWindow can briefly report a
+        # real game window with a negative/off-screen X. Cropping that produces
+        # a useless vertical strip, and click mapping misses the visible game.
+        # Treat mostly-offscreen candidates as absent and let the frontmost
+        # screen fallback handle fullscreen play.
+        if visible_width < pixel_width * 0.9 or visible_height < pixel_height * 0.9:
+            continue
         info = {
             "owner": owner,
             "title": title,
@@ -276,6 +304,7 @@ def find_game_window() -> dict[str, Any] | None:
                 "height": point_height,
             },
             "pixelBox": (pixel_x, pixel_y, pixel_x + pixel_width, pixel_y + pixel_height),
+            "visiblePixelBox": visible_box,
             "pixelBoxObject": {
                 "x": pixel_x,
                 "y": pixel_y,
@@ -290,11 +319,108 @@ def find_game_window() -> dict[str, Any] | None:
     return max(candidates, key=lambda item: item[0])[1]
 
 
+def is_game_frontmost() -> bool:
+    script = (
+        'tell application "System Events" to get bundle identifier of first application process '
+        "whose frontmost is true"
+    )
+    try:
+        result = subprocess.run(
+            ["osascript", "-e", script],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.DEVNULL,
+            text=True,
+            timeout=2,
+            check=False,
+        )
+    except Exception:
+        return False
+    return result.stdout.strip() == APP_BUNDLE_ID
+
+
+def main_screen_game_window() -> dict[str, Any] | None:
+    try:
+        from AppKit import NSScreen
+
+        screen = NSScreen.mainScreen()
+        if not screen:
+            return None
+        frame = screen.frame()
+        scale = float(screen.backingScaleFactor())
+        point_x = float(frame.origin.x)
+        point_y = float(frame.origin.y)
+        point_width = float(frame.size.width)
+        point_height = float(frame.size.height)
+    except Exception:
+        scale = mac_screen_scale()
+        point_x = 0.0
+        point_y = 0.0
+        point_width = float(Quartz.CGDisplayPixelsWide(Quartz.CGMainDisplayID()) / scale)
+        point_height = float(Quartz.CGDisplayPixelsHigh(Quartz.CGMainDisplayID()) / scale)
+
+    pixel_x = int(point_x * scale)
+    pixel_y = int(point_y * scale)
+    pixel_width = int(point_width * scale)
+    pixel_height = int(point_height * scale)
+    return {
+        "owner": "Disco Elysium",
+        "title": "frontmost screen fallback",
+        "windowNumber": 0,
+        "displayScale": scale,
+        "pointBox": {
+            "x": point_x,
+            "y": point_y,
+            "width": point_width,
+            "height": point_height,
+        },
+        "pixelBox": (pixel_x, pixel_y, pixel_x + pixel_width, pixel_y + pixel_height),
+        "pixelBoxObject": {
+            "x": pixel_x,
+            "y": pixel_y,
+            "width": pixel_width,
+            "height": pixel_height,
+        },
+        "fallback": "frontmost-main-screen",
+    }
+
+
+def main_screen_pixel_box() -> tuple[int, int, int, int]:
+    try:
+        from AppKit import NSScreen
+
+        screen = NSScreen.mainScreen()
+        if not screen:
+            raise RuntimeError("NSScreen.mainScreen() returned None")
+        frame = screen.frame()
+        scale = float(screen.backingScaleFactor())
+        width = int(float(frame.size.width) * scale)
+        height = int(float(frame.size.height) * scale)
+    except Exception:
+        try:
+            width = int(Quartz.CGDisplayPixelsWide(Quartz.CGMainDisplayID()))
+            height = int(Quartz.CGDisplayPixelsHigh(Quartz.CGMainDisplayID()))
+        except Exception:
+            scale = mac_screen_scale()
+            width = int(1440 * scale)
+            height = int(900 * scale)
+    return (0, 0, width, height)
+
+
+def intersect_box(a: tuple[int, int, int, int], b: tuple[int, int, int, int]) -> tuple[int, int, int, int]:
+    return (
+        max(a[0], b[0]),
+        max(a[1], b[1]),
+        min(a[2], b[2]),
+        min(a[3], b[3]),
+    )
+
+
 def map_click_coordinates(x: int, y: int, params: dict[str, list[str]]) -> tuple[int, int, dict[str, Any]]:
     target = one(params, "target", "screen").lower()
     scale = clamp_float(one(params, "scale", "1.0"), 0.05, 1.0)
     if target in {"game", "window"}:
-        game_window = find_game_window()
+        activate_game()
+        game_window = find_game_window(retries=5, delay=0.18)
         if not game_window:
             raise RuntimeError("Disco Elysium window not found; launch the game or use target=screen absolute coordinates.")
         point_box = game_window["pointBox"]

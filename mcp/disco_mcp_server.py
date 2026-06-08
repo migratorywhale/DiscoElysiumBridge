@@ -117,17 +117,17 @@ def disco_click_watch(
     double: bool = False,
     target: str = "game",
     scale: float = DEFAULT_GAME_SCALE,
-    frames: int = 3,
-    interval_ms: int = 150,
+    frames: int = 6,
+    interval_ms: int = 400,
     watch_scale: float | None = None,
     quality: int = 35,
     max_bytes: int = 350000,
 ) -> list:
-    """Click a coordinate, then immediately capture a short screenshot burst for fast disappearing captions."""
+    """Click a coordinate, then capture a screenshot burst for captions/tooltips that appear after walking."""
     scale = max(0.05, min(float(scale), 1.0))
     watch_scale = scale if watch_scale is None else max(0.05, min(float(watch_scale), 1.0))
-    frames = max(1, min(int(frames), 5))
-    interval_ms = max(0, min(int(interval_ms), 1000))
+    frames = max(1, min(int(frames), 12))
+    interval_ms = max(0, min(int(interval_ms), 2000))
     quality = max(10, min(int(quality), 95))
     max_bytes = max(20_000, min(int(max_bytes), 5_000_000))
     data = request_json(

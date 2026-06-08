@@ -276,9 +276,11 @@ fullscreen window between screenshot and click calls.
 If visual coordinate picking is ambiguous, call `disco_markers`; it returns
 green interaction-marker coordinates in screenshot space, and each `marker.click`
 object can be passed directly to `disco_click`.
-If a caption or tooltip disappears before a normal follow-up screenshot can catch
-it, use `disco_click_watch`; it clicks once and immediately returns a short burst
-of screenshots with frame timing metadata.
+If a caption or tooltip appears after the character walks over and disappears
+before a normal follow-up screenshot can catch it, use `disco_click_watch`; it
+clicks once and returns a timed screenshot burst. The default is 6 frames spaced
+400ms apart, which covers roughly 2-3 seconds after the click. For slower
+interactions, raise it to something like `frames=8, interval_ms=500`.
 `disco_key` accepts both `name="tab"` and `key="tab"` for compatibility with
 different MCP clients.
 

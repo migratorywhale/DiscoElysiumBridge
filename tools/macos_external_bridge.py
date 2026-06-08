@@ -27,7 +27,7 @@ except Exception:  # pragma: no cover - depends on local venv.
     Image = None  # type: ignore
 
 
-VERSION = "0.3.9"
+VERSION = "0.3.10"
 APP_BUNDLE_ID = os.environ.get("DISCO_APP_BUNDLE_ID", "com.zaumstudio.discoelysium")
 DEFAULT_GAME_SCALE = 0.4
 LAST_GAME_CAPTURE_TTL_SECONDS = 60.0
@@ -333,8 +333,8 @@ def detect_markers(params: dict[str, list[str]]) -> dict[str, Any]:
 def click_watch(params: dict[str, list[str]]) -> dict[str, Any]:
     click_result = perform_click(params)
     remember_click_mapping_as_capture(click_result)
-    frame_count = clamp_int(one(params, "frames", "3"), 1, 5)
-    interval_ms = clamp_int(one(params, "interval_ms", "150"), 0, 1000)
+    frame_count = clamp_int(one(params, "frames", "6"), 1, 12)
+    interval_ms = clamp_int(one(params, "interval_ms", "400"), 0, 2000)
     frame_params = {
         "target": [one(params, "target", "game")],
         "scale": [one(params, "watch_scale", one(params, "scale", str(DEFAULT_GAME_SCALE)))],
